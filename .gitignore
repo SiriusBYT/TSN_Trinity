@@ -5,5 +5,5 @@
 # Server Data
 *.json
 
-# Whatever the fuck this is
+# nuh uh no compiled python in my repository
 *.pyc
