@@ -54,13 +54,16 @@ class Trinity_Socket:
     def Communication_Failed(self) -> None:
         self.Communication_Errors += 1;
         if (self.Communication_Errors >= Server_Max_Communication_Errors):
-            S_Close = Log.Info(f"Closing {self.Address}...");
-            self.Connected = self.Listen = False;
-            try:
-                self.Client.close();
-            except:
-                Misc.Void();
-            S_Close.OK();
+            self.Terminate();
+
+    def Terminate(self) -> None:
+        S_Close = Log.Info(f"Closing {self.Address}...");
+        self.Connected = self.Listen = False;
+        try:
+            self.Client.close();
+        except:
+            Misc.Void();
+        S_Close.OK();
 
     def Async_Receive(self):
         while (self.Connected):
