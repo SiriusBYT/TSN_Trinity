@@ -2,18 +2,20 @@ from TSN_Abstracter import *;
 import asyncio, threading;
 import websockets, socket;
 import dotenv, os;
+import time;
 
 
-Version = "a250221";
-Packet_Size = 8192;
-Server_Running = True;
-Server_Max_Communication_Errors = 3;
+Version: str = "a250221";
+Packet_Size: int = 8192;
+Server_Running: bool = True;
+Server_Max_Communication_Errors: int = 3;
+Server_Max_Communication_Length: int = 10;
 
 # Dictionary
     # Trinity Server Types
-Relay = 0;
-Endpoint = 1;
-Heartbeat = 2;
+Relay: int = 0;
+Endpoint: int = 1;
+Heartbeat: int = 2;
 
 """ MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
 Gives us the variables "Server_Key_Private" and "Server_Key_Public" which are going to be used to secure communication.
@@ -31,9 +33,11 @@ def Server_Key_Public():
 
 
 class Trinity_Socket:
-    def __init__(self, Socket, WebSocket: bool) -> None:
+    def __init__(self, Socket, WebSocket: bool, Processor) -> None:
         self.WebSocket = WebSocket;
-        self.Communication_Errors = 0;
+        self.Processor = Processor;
+
+        self.Communication_Errors: int = 0;
 
         if (self.WebSocket):
             pass;
@@ -46,11 +50,40 @@ class Trinity_Socket:
 
         self.Secure = True if (self.WebSocket) else False;
         self.Connected = self.Listen = True;
-        self.Last_Message = None;
-        self.Thread = threading.Thread(target=self.Async_Receive);
-        self.Thread.daemon = True;
-        self.Thread.start();
+        self.Queue: list[str] = [];
 
+        self.T_Processor = threading.Thread(target=self.Thread_Processor);
+        self.T_Processor.daemon = True;
+        self.T_Processor.start();
+
+        self.T_Receive = threading.Thread(target=self.Thread_Receive);
+        self.T_Receive.daemon = True;
+        self.T_Receive.start();
+
+
+    def Thread_Processor(self, Tickrate: int = 0.01):
+        while (self.Connected):
+            if (self.Queue != []):
+               if(self.Processor(self, self.Queue[0])):
+                   self.Queue.pop(0);
+            else:
+                time.sleep(Tickrate);
+
+    def Thread_Receive(self):
+        while (self.Connected):
+            while (self.Listen):
+                New_Message = self.Receive();
+                if (New_Message != None):
+                    Log.Info(f"{self.Address} -> {New_Message}");
+                    self.Queue.append(New_Message);
+    
+    def Thread_Timeout(self):
+        # Terminate a client if they're connected for more than an hour.
+        time.sleep(Server_Max_Communication_Length);
+        self.Send_Code("CONNECTION_LENGTH_EXCEEDED");
+        self.Terminate();
+
+    
     def Communication_Failed(self) -> None:
         self.Communication_Errors += 1;
         if (self.Communication_Errors >= Server_Max_Communication_Errors):
@@ -60,17 +93,21 @@ class Trinity_Socket:
         S_Close = Log.Info(f"Closing {self.Address}...");
         self.Connected = self.Listen = False;
         try:
+            self.Send_Code("CLOSING");
             self.Client.close();
         except:
             Misc.Void();
         S_Close.OK();
 
-    def Async_Receive(self):
-        while (self.Connected):
-            while (self.Listen):
-                self.Last_Message = self.Receive();
-                if (self.Last_Message != None):
-                    Log.Info(f"{self.Address} -> {self.Last_Message}");
+    def Enable_Encryption(self) -> None:
+        self.Listen = False;
+
+        self.Client_Public = self.Receive();
+        self.Send(Server_Key_Public);
+        
+        Data = self.Receive();
+        if (Cryptography.Decrypt(self.Server_Private, Data) == "Hugging a Mika a day, keeps your sanity away~"):
+            self.Secure = True;
 
     def Receive(self) -> str:
         try:
@@ -92,7 +129,7 @@ class Trinity_Socket:
             self.Communication_Failed();
 
     def Send(self, Data: str) -> bool:
-        def Send_WebSocket() -> bool:
+        def Send_WebSocket(Data: str) -> bool:
             S_Send = Log.Info(f"{Data} -> {self.Address}")
             try:
                 self.Client.send(Data);
@@ -103,7 +140,7 @@ class Trinity_Socket:
                 self.Communication_Failed();
                 return False;
 
-        def Send_RawSocket() -> bool:
+        def Send_RawSocket(Data: str) -> bool:
             if (self.Secure):
                 S_Send = Log.Info(f"{Data} -> {self.Address} (Encrypted)")
                 Message = Cryptography.Encrypt(self.Client_Public, Data);
@@ -124,19 +161,17 @@ class Trinity_Socket:
         else:
             return Send_RawSocket(Data);
 
-    def Enable_Encryption(self) -> None:
-        self.Listen = False;
+    def Send_Code(self, Message: str) -> bool:
+        return self.Send(f"CODE¤{Message}");
 
-        self.Client_Public = self.Receive();
-        self.Send(Server_Key_Public);
-        
-        Data = self.Receive();
-        if (Cryptography.Decrypt(self.Server_Private, Data) == "Hugging a Mika a day, keeps your sanity away~"):
-            self.Secure = True;
-
+# Example Processor
+def Echo(Client: Trinity_Socket, Command: str) -> bool:
+    Client.Send(Command);
+    return True;
 
 class Trinity_Server:
-    def __init__(self, Type: int = Relay) -> None:
+    def __init__(self, Processor, Type: int = Relay) -> None:
+        self.Processor = Processor;
         self.Type = Type;
 
         # You can't use variables in switch cases so we have to use the raw fucking numbers
@@ -155,33 +190,30 @@ class Trinity_Server:
                 Log.Info("Starting Trinity Endpoint Heartbeat...")
                 pass;
             case _:
-                Log.Critical(f"Unknown Trinty Server Type: {self.Type}. Shutting down.")
+                Log.Critical(f"Unknown Trinity Server Type: {self.Type}. Shutting down.")
                 quit();
 
     def RawSocket_Thread(self, Port: int = 1407) -> None:
-        S_Raw = Log.Info("Starting RawSockets Thread...")
-        async def Listener(S_Raw: Log.Awaited_Log, Port: int) -> None:
-            S_Raw.OK();
-            global Socket_Raw;
-            Socket_Raw = socket.socket();
-            Attempts = 1;
-            while True:
-                Log.Carriage(f"Attempting to bind RawSocket... (Attempt {Attempts})");
-                try:
-                    Socket_Raw.bind(("0.0.0.0", Port));
-                    Log.Info(f"Successfully binded RawSocket in {Attempts} Attempts.");
-                    break;
-                except:
-                    Attempts += 1;
-                    asyncio.sleep(1);
-            S_Listen = Log.Info(f"Listening for RawSockets...");
-            Socket_Raw.listen();
-            S_Listen.OK();
-            while Server_Running:
-                Client_Thread = threading.Thread(target=Trinity_Socket(Socket_Raw, False));
-                Client_Thread.daemon = True;
-                Client_Thread.start();
-        asyncio.run(Listener(S_Raw, Port));
+        Log.Info("Starting RawSockets Thread...")
+        global Socket_Raw;
+        Socket_Raw = socket.socket();
+        Attempts = 1;
+        while True:
+            Log.Carriage(f"Attempting to bind RawSocket... (Attempt {Attempts})");
+            try:
+                Socket_Raw.bind(("0.0.0.0", Port));
+                Log.Info(f"Successfully binded RawSocket in {Attempts} Attempts.");
+                break;
+            except:
+                Attempts += 1;
+                time.sleep(1);
+        S_Listen = Log.Info(f"Listening for RawSockets...");
+        Socket_Raw.listen();
+        S_Listen.OK();
+        while Server_Running:
+            Client_Thread = threading.Thread(target=Trinity_Socket(Socket_Raw, False, self.Processor));
+            Client_Thread.daemon = True;
+            Client_Thread.start();
 
 
 # If the file is ran as is, assuming we want to start the Trinity Relay.
@@ -191,6 +223,6 @@ if (__name__== "__main__"):
     Config.Logging["File"] = True; # Allow Log Files
     Config.Logging["Print_Level"] = 0; # Show ALL messages
     dotenv.load_dotenv()
-    Trinity_Server(Type=Relay);
+    Trinity_Server(Processor=Echo, Type=Relay);
 else:
-    Trinity_Server(Type=Heartbeat);
+    Trinity_Server(Processor=Echo, Type=Heartbeat);

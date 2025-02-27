@@ -23,6 +23,7 @@ def API_Shell(Server,Port):
     while True:
         Input = input("API: ");
         Send(Input);
+        print(Receive_Data());
     
 while True:
     API_Shell("localhost", 1407);
