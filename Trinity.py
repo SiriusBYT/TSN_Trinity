@@ -9,13 +9,26 @@ Version: str = "a250221";
 Packet_Size: int = 8192;
 Server_Running: bool = True;
 Server_Max_Communication_Errors: int = 3;
-Server_Max_Communication_Length: int = 10;
+Server_Max_Communication_Length: int = 3600;
 
-# Dictionary
-    # Trinity Server Types
-Relay: int = 0;
-Endpoint: int = 1;
-Heartbeat: int = 2;
+
+""" Make the IDE less angry because of the type safe functions below.
+Note these functions would normally be called from another file. """
+class Trinity_Socket: pass;
+
+# Example Processor
+def Echo(Client: Trinity_Socket, Command: str) -> bool:
+    Client.Send(Command);
+    return True;
+
+# Example Routine Function
+def Echo_Routine(Client: Trinity_Socket):
+    while (Client.Connected):
+        time.sleep(10);
+        while (Client.Listen):
+            #Client.Send(f"Routine Message!");
+            time.sleep(10);
+
 
 """ MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
 Gives us the variables "Server_Key_Private" and "Server_Key_Public" which are going to be used to secure communication.
@@ -31,11 +44,14 @@ def Server_Key_Public():
     Log.Info("A Public Key is being generated for this session. Please hold.");
     return Cryptography.Generate_Public(Server_Key_Private)
 
-
 class Trinity_Socket:
-    def __init__(self, Socket, WebSocket: bool, Processor) -> None:
+    def __init__(self, Socket, WebSocket: bool, Processor, Routine, Tickrate: int = 0.01) -> None:
+        """NOTE: Processor and Routine are FUNCTIONS! For some reason adding "function" to declare we want to accept a function,
+        doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         self.WebSocket = WebSocket;
         self.Processor = Processor;
+        self.Routine = Routine;
+        self.Tickrate = Tickrate;
 
         self.Communication_Errors: int = 0;
 
@@ -45,12 +61,14 @@ class Trinity_Socket:
             Client, Address = Socket.accept();
             self.Client = Client;
         
-        self.Address = f"{Address[0]}:{Address[1]}";
-        self.Address = f"Web://{self.Address}" if (self.WebSocket) else f"Raw://{self.Address}";
+        self.IP = f"{Address[0]}:{Address[1]}";
+        self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
+        Log.Info(f"Connection: {self.Address} (Raw)");
 
         self.Secure = True if (self.WebSocket) else False;
         self.Connected = self.Listen = True;
-        self.Queue: list[str] = [];
+        self.Queue: list[str | bytes] = [];
+        self.Listen_Accident: str = None;
 
         self.T_Processor = threading.Thread(target=self.Thread_Processor);
         self.T_Processor.daemon = True;
@@ -59,23 +77,33 @@ class Trinity_Socket:
         self.T_Receive = threading.Thread(target=self.Thread_Receive);
         self.T_Receive.daemon = True;
         self.T_Receive.start();
+    
+        self.T_Timeout = threading.Thread(target=self.Thread_Timeout);
+        self.T_Timeout.daemon = True;
+        self.T_Timeout.start();
 
+        self.Routine(self);
 
-    def Thread_Processor(self, Tickrate: int = 0.01):
+    def Thread_Processor(self):
         while (self.Connected):
             if (self.Queue != []):
-               if(self.Processor(self, self.Queue[0])):
+               if (self.Queue[0] == "SYS¤Encrypt"):
+                   self.Enable_Encryption();
+               elif (self.Processor(self, self.Queue[0])):
                    self.Queue.pop(0);
             else:
-                time.sleep(Tickrate);
+                time.sleep(self.Tickrate);
 
     def Thread_Receive(self):
+        # This system is retarded but works. Mostly cause it only has issues with Enable_Encryption()
         while (self.Connected):
             while (self.Listen):
                 New_Message = self.Receive();
                 if (New_Message != None):
                     Log.Info(f"{self.Address} -> {New_Message}");
                     self.Queue.append(New_Message);
+                time.sleep(self.Tickrate);
+            time.sleep(self.Tickrate);
     
     def Thread_Timeout(self):
         # Terminate a client if they're connected for more than an hour.
@@ -100,14 +128,25 @@ class Trinity_Socket:
         S_Close.OK();
 
     def Enable_Encryption(self) -> None:
-        self.Listen = False;
-
-        self.Client_Public = self.Receive();
-        self.Send(Server_Key_Public);
+        # This code is shit. But I can't be fucked fixing it.
+        self.Queue = [];
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
         
-        Data = self.Receive();
-        if (Cryptography.Decrypt(self.Server_Private, Data) == "Hugging a Mika a day, keeps your sanity away~"):
-            self.Secure = True;
+        self.Client_Public = Cryptography.Load_Public(self.Queue[0]);
+        self.Queue.pop(0);
+        self.Send(Cryptography.Get_Bytes_Public(Server_Key_Public));
+        
+        self.Secure = True;
+
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
+        if (self.Queue[0] == "Hugging a Mika a day, keeps your sanity away~"):
+            self.Send_Code("OK");
+        else:
+            self.Send_Code("DECRYPTED_UNEXPECTED");
+            self.Secure = False;
+        self.Queue.pop(0);
 
     def Receive(self) -> str:
         try:
@@ -116,8 +155,9 @@ class Trinity_Socket:
                 Data = self.Client.recv();
             else:
                 if (self.Secure):
-                    Data = Cryptography.Decrypt(self.Private_Key, self.Client.recv(Packet_Size).decode());
-                Data = self.Client.recv(Packet_Size).decode();
+                    Data = Cryptography.Decrypt(Server_Key_Private, self.Client.recv(Packet_Size));
+                else:
+                    Data = self.Client.recv(Packet_Size).decode();
             
             # Null Check
             if (Data != ""):
@@ -128,7 +168,7 @@ class Trinity_Socket:
         except Exception as Except:
             self.Communication_Failed();
 
-    def Send(self, Data: str) -> bool:
+    def Send(self, Data: str | bytes) -> bool:
         def Send_WebSocket(Data: str) -> bool:
             S_Send = Log.Info(f"{Data} -> {self.Address}")
             try:
@@ -140,16 +180,19 @@ class Trinity_Socket:
                 self.Communication_Failed();
                 return False;
 
-        def Send_RawSocket(Data: str) -> bool:
+        def Send_RawSocket(Data: str | bytes) -> bool:
             if (self.Secure):
                 S_Send = Log.Info(f"{Data} -> {self.Address} (Encrypted)")
                 Message = Cryptography.Encrypt(self.Client_Public, Data);
+            elif (type(Data) == bytes):
+                S_Send = Log.Info(f"{Data} -> {self.Address} (Public Key)")
+                Message = Data;
             else:
                 S_Send = Log.Info(f"{Data} -> {self.Address} (Unencrypted)")
-                Message = Data;
-            
+                Message = Data.encode("UTF-8");
+
             try:
-                self.Client.send(Message.encode("utf-8"));
+                self.Client.send(Message);
                 S_Send.OK();
                 return True;
             except Exception as Except:
@@ -164,29 +207,25 @@ class Trinity_Socket:
     def Send_Code(self, Message: str) -> bool:
         return self.Send(f"CODE¤{Message}");
 
-# Example Processor
-def Echo(Client: Trinity_Socket, Command: str) -> bool:
-    Client.Send(Command);
-    return True;
-
 class Trinity_Server:
-    def __init__(self, Processor, Type: int = Relay) -> None:
+    def __init__(self, Processor, Routine, Type: str = "Relay") -> None:
         self.Processor = Processor;
+        self.Routine = Routine;
         self.Type = Type;
 
         # You can't use variables in switch cases so we have to use the raw fucking numbers
         match self.Type:
-            case 0: # Relay
+            case "Relay": # Relay
                 Log.Info("Starting Trinity Server as a Relay...")
                 Log.Info("Loading Endpoints Configuration...");
                 Configuration = File.JSON_Read("Relay.json");
             
                 threading.Thread(target=self.RawSocket_Thread()).setDaemon(True).start();
             
-            case 1: # Endpoint
+            case "Endpoint":
                 Log.Info("Starting Trinity Server as an Endpoint...")
                 pass;
-            case 2: # Heartbeat
+            case "Heartbeat":
                 Log.Info("Starting Trinity Endpoint Heartbeat...")
                 pass;
             case _:
@@ -211,7 +250,7 @@ class Trinity_Server:
         Socket_Raw.listen();
         S_Listen.OK();
         while Server_Running:
-            Client_Thread = threading.Thread(target=Trinity_Socket(Socket_Raw, False, self.Processor));
+            Client_Thread = threading.Thread(target=Trinity_Socket(Socket_Raw, False, self.Processor, self.Routine));
             Client_Thread.daemon = True;
             Client_Thread.start();
 
@@ -223,6 +262,6 @@ if (__name__== "__main__"):
     Config.Logging["File"] = True; # Allow Log Files
     Config.Logging["Print_Level"] = 0; # Show ALL messages
     dotenv.load_dotenv()
-    Trinity_Server(Processor=Echo, Type=Relay);
+    Trinity_Server(Processor=Echo, Routine=Echo_Routine, Type="Relay");
 else:
-    Trinity_Server(Processor=Echo, Type=Heartbeat);
+    Trinity_Server(Processor=Echo, Routine=Echo_Routine, Type="Heartbeat");
