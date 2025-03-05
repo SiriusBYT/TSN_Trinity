@@ -15,8 +15,8 @@ def Client_Key_Public():
     Log.Info("A Public Key is being generated for this session. Please hold.");
     return Cryptography.Generate_Public(Client_Key_Private)
 
-class Trinity_Client_SHELL:
-    def __init__(self, Address, Port, Tickrate: int = 0.01) -> None:
+class Trinity_Client:
+    def __init__(self, Address, Port, Tickrate: int = 0.01, Shell: bool = False) -> None:
         self.Client = socket.socket();
         self.Address = Address;
         self.Port = Port;
@@ -34,7 +34,8 @@ class Trinity_Client_SHELL:
         self.Ping = time.monotonic()*1000; self.Client.connect((self.Address, self.Port));
         self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
         Log.Info(f"Connected to {self.Address}:{self.Port} with a latency of {self.Ping}ms.");
-        while (self.Connected):
+        
+        while (self.Connected and self.Shell):
             Command = input(f"Trinity://");
             if (Command == "SYS¤Encrypt"):
                 self.Send(Command);
@@ -116,32 +117,6 @@ class Trinity_Client_SHELL:
 
     def Send_Code(self, Message: str) -> bool:
         return self.Send(f"CODE¤{Message}");
-
-
-def API_Shell(Server,Port):
-    Packet_Size = 8192
-    Socket = socket.socket()
-
-    def Log(Log):
-        CTime = time.localtime()
-        Time = f"{CTime.tm_hour:02d}:{CTime.tm_min:02d}:{CTime.tm_sec:02d}"
-        Date = f"{CTime.tm_mday:02d}-{CTime.tm_mon:02d}-{CTime.tm_year}"
-        print(f"[{Date} - {Time}] {Log}")
-
-    # Key Handling Functions
-    def Send(Packet):
-        try: Socket.send(str(Packet).encode())
-        except Exception as Error_Info: Log(f"[Error - Sending] {Error_Info}"); return;
-    def Receive_Data():
-        try: Response = Socket.recv(Packet_Size).decode(); return Response;
-        except Exception as Error_Info: Log(f"[Error - Receiving] {Error_Info}"); return;
-    
-    Ping = time.monotonic()*1000; Socket.connect((Server, Port));
-    Ping = math.floor(((time.monotonic()*1000) - Ping));
-    while True:
-        Input = input("API: ");
-        Send(Input);
-        print(Receive_Data());
     
 while True:
-    Trinity_Client_SHELL("localhost", 1407);
+    Trinity_Client("localhost", 1407, True);
