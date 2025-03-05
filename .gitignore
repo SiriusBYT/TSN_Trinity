@@ -2,8 +2,5 @@
 *.env
 *.log
 
-# Server Data
-*.json
-
 # nuh uh no compiled python in my repository
 *.pyc

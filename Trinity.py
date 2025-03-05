@@ -2,7 +2,7 @@ from TSN_Abstracter import *;
 import asyncio, threading;
 import websockets, socket;
 import dotenv, os;
-import time;
+import time, math;
 
 
 Version: str = "a250221";
@@ -31,18 +31,18 @@ def Echo_Routine(Client: Trinity_Socket):
 
 
 """ MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
-Gives us the variables "Server_Key_Private" and "Server_Key_Public" which are going to be used to secure communication.
+Gives us the variables "Key_Private" and "Key_Public" which are going to be used to secure communication.
 It's better to generate a new key for each client security wise but this is taxing on the server and it doesn't really
 matter anyways since the bigger problem is storing the data received rather than the currently on-going communications"""
 @lambda _: _()
-def Server_Key_Private():
+def Key_Private():
     Log.Info("A Private Key is being generated for this session. Please hold.");
     return Cryptography.Generate_Private();
 
 @lambda _: _()
-def Server_Key_Public():
+def Key_Public():
     Log.Info("A Public Key is being generated for this session. Please hold.");
-    return Cryptography.Generate_Public(Server_Key_Private)
+    return Cryptography.Generate_Public(Key_Private)
 
 class Trinity_Socket:
     def __init__(self, Socket, WebSocket: bool, Processor, Routine, Tickrate: int = 0.01) -> None:
@@ -54,6 +54,7 @@ class Trinity_Socket:
         self.Tickrate = Tickrate;
 
         self.Communication_Errors: int = 0;
+        self.Auth_Level: int = 0;
 
         if (self.WebSocket):
             pass;
@@ -135,7 +136,7 @@ class Trinity_Socket:
         
         self.Client_Public = Cryptography.Load_Public(self.Queue[0]);
         self.Queue.pop(0);
-        self.Send(Cryptography.Get_Bytes_Public(Server_Key_Public));
+        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
         
         self.Secure = True;
 
@@ -155,7 +156,7 @@ class Trinity_Socket:
                 Data = self.Client.recv();
             else:
                 if (self.Secure):
-                    Data = Cryptography.Decrypt(Server_Key_Private, self.Client.recv(Packet_Size));
+                    Data = Cryptography.Decrypt(Key_Private, self.Client.recv(Packet_Size));
                 else:
                     Data = self.Client.recv(Packet_Size).decode();
             
@@ -254,6 +255,61 @@ class Trinity_Server:
             Client_Thread.daemon = True;
             Client_Thread.start();
 
+class Trinity_Client(Trinity_Socket):
+    def __init__(self, Address, Port, Tickrate: int = 0.01, Shell: bool = False) -> None:
+        self.Client = socket.socket();
+        self.Address = Address;
+        self.Port = Port;
+        self.Tickrate = Tickrate;
+
+        self.Secure = False;
+        self.Connected = self.Listen = True;
+        self.Result_History: list[str] = [];
+
+
+        self.T_Receive = threading.Thread(target=self.Thread_Receive);
+        self.T_Receive.daemon = True;
+        self.T_Receive.start();
+    
+        self.Ping = time.monotonic()*1000; self.Client.connect((self.Address, self.Port));
+        self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
+        Log.Info(f"Connected to {self.Address}:{self.Port} with a latency of {self.Ping}ms.");
+        
+        while (self.Connected and self.Shell):
+            Command = input(f"Trinity://");
+            if (Command == "SYS¤Encrypt"):
+                self.Send(Command);
+                self.Enable_Encryption();
+            else:
+                self.Send(Command);
+
+
+    def Thread_Receive(self):
+        while (self.Connected):
+            while (self.Listen):
+                New_Message = self.Receive();
+                if (New_Message != None):
+                    Log.Info(f"{self.Address} -> {New_Message}");
+                    self.Result_History.append(New_Message);
+
+    def Enable_Encryption(self) -> None:
+        # This code is shit. But I can't be fucked fixing it.
+        self.Result_History = [];
+
+        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
+        while (self.Result_History == []):
+            time.sleep(self.Tickrate);
+        self.Server_Public = Cryptography.Load_Public(self.Result_History[0]);
+        
+        self.Secure = True;
+        self.Result_History = [];
+        self.Send("Hugging a Mika a day, keeps your sanity away~");
+        while (self.Result_History == []):
+            print("Waiting...")
+            time.sleep(self.Tickrate);
+        if (self.Result_History[0] != "CODE¤OK"):
+            self.Secure = False;
+        self.Result_History = [];
 
 # If the file is ran as is, assuming we want to start the Trinity Relay.
 if (__name__== "__main__"):
@@ -263,5 +319,3 @@ if (__name__== "__main__"):
     Config.Logging["Print_Level"] = 0; # Show ALL messages
     dotenv.load_dotenv()
     Trinity_Server(Processor=Echo, Routine=Echo_Routine, Type="Relay");
-else:
-    Trinity_Server(Processor=Echo, Routine=Echo_Routine, Type="Heartbeat");

@@ -1,0 +1,24 @@
+{
+    "Seminar": {
+        "Type": "Auth",
+        "Address": "localhost",
+        "Port": 2304
+    },
+    "Kosaka": {
+        "Type": "Heartbeat",
+        "Address": "localhost",
+        "Port": 2005
+    },
+    "Flashcord": {
+        "Type": "API",
+        "Address": "localhost",
+        "Port": 1407,
+        "Security": 1
+    },
+    "Kronos": {
+        "Type": "API",
+        "Address": "localhost",
+        "Port": 1408,
+        "Security": -1
+    }
+}
