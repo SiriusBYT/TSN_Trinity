@@ -45,7 +45,7 @@ def Key_Public():
     return Cryptography.Generate_Public(Key_Private)
 
 class Trinity_Socket:
-    def __init__(self, Socket, WebSocket: bool, Processor, Routine, Tickrate: int = 0.01) -> None:
+    def __init__(self, Socket, Address, WebSocket: bool, Processor, Routine, Tickrate: int = 0.01) -> None:
         """NOTE: Processor and Routine are FUNCTIONS! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         self.WebSocket = WebSocket;
@@ -59,8 +59,8 @@ class Trinity_Socket:
         if (self.WebSocket):
             pass;
         else:
-            Client, Address = Socket.accept();
-            self.Client = Client;
+            self.Client = Socket;
+            self.Client.settimeout(5);
         
         self.IP = f"{Address[0]}:{Address[1]}";
         self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
@@ -104,6 +104,7 @@ class Trinity_Socket:
                     Log.Info(f"{self.Address} -> {New_Message}");
                     self.Queue.append(New_Message);
                 time.sleep(self.Tickrate);
+                print("waiting for msg")
             time.sleep(self.Tickrate);
     
     def Thread_Timeout(self):
@@ -251,7 +252,8 @@ class Trinity_Server:
         Socket_Raw.listen();
         S_Listen.OK();
         while Server_Running:
-            Client_Thread = threading.Thread(target=Trinity_Socket(Socket_Raw, False, self.Processor, self.Routine));
+            Client, Address = Socket_Raw.accept();
+            Client_Thread = threading.Thread(target=Trinity_Socket(Client, Address, False, self.Processor, self.Routine));
             Client_Thread.daemon = True;
             Client_Thread.start();
 
@@ -261,11 +263,14 @@ class Trinity_Client(Trinity_Socket):
         self.Address = Address;
         self.Port = Port;
         self.Tickrate = Tickrate;
+        self.WebSocket = False;
+        self.Shell = Shell;
 
         self.Secure = False;
         self.Connected = self.Listen = True;
         self.Result_History: list[str] = [];
 
+        self.Client_Public = Key_Public;
 
         self.T_Receive = threading.Thread(target=self.Thread_Receive);
         self.T_Receive.daemon = True;
@@ -283,6 +288,7 @@ class Trinity_Client(Trinity_Socket):
             else:
                 self.Send(Command);
 
+    def Communication_Failed(self) -> None: return;
 
     def Thread_Receive(self):
         while (self.Connected):
@@ -305,7 +311,6 @@ class Trinity_Client(Trinity_Socket):
         self.Result_History = [];
         self.Send("Hugging a Mika a day, keeps your sanity away~");
         while (self.Result_History == []):
-            print("Waiting...")
             time.sleep(self.Tickrate);
         if (self.Result_History[0] != "CODE¤OK"):
             self.Secure = False;
