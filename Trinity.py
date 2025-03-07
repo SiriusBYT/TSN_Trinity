@@ -10,25 +10,16 @@ Packet_Size: int = 8192;
 Server_Running: bool = True;
 Server_Max_Communication_Errors: int = 3;
 Server_Max_Communication_Length: int = 3600;
+Connected_Clients: list = [];
 
-
-""" Make the IDE less angry because of the type safe functions below.
-Note these functions would normally be called from another file. """
+""" Make the IDE less angry because of the type safe functions below. """
 class Trinity_Socket: pass;
 
-# Example Processor
-def Echo(Client: Trinity_Socket, Command: str) -> bool:
-    Client.Send(Command);
-    return True;
+def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
+    pass;
 
-# Example Routine Function
-def Echo_Routine(Client: Trinity_Socket):
-    while (Client.Connected):
-        time.sleep(10);
-        while (Client.Listen):
-            #Client.Send(f"Routine Message!");
-            time.sleep(10);
-
+def Trinity_Routine(Client: Trinity_Socket) -> None:
+    pass;
 
 """ MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
 Gives us the variables "Key_Private" and "Key_Public" which are going to be used to secure communication.
@@ -323,4 +314,4 @@ if (__name__== "__main__"):
     Config.Logging["File"] = True; # Allow Log Files
     Config.Logging["Print_Level"] = 0; # Show ALL messages
     dotenv.load_dotenv()
-    Trinity_Server(Processor=Echo, Routine=Echo_Routine, Type="Relay");
+    Trinity_Server(Processor=Trinity_Relayer, Routine=Trinity_Routine, Type="Relay");
