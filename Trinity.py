@@ -41,7 +41,7 @@ def Key_Public():
 
 
 
-class Trinity_Base:
+class Trinity_Socket:
     def __init__(self, Processor = None, Socket: socket.socket = socket.socket(), Address: tuple[str, int] = ("localhost", "1407"), WebSocket: bool = False, Tickrate: int = 0.01, **kwargs) -> None:
         """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
@@ -181,7 +181,7 @@ class Trinity_Base:
             else:
                 self.Send(Command);
 
-class Trinity_Server(Trinity_Base):
+class Trinity_Server(Trinity_Socket):
     def Configuration(self) -> list:
         self.IP = f"{self.Address[0]}:{self.Address[1]}";
         self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
