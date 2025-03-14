@@ -21,7 +21,6 @@ def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
 
 def Trinity_Routine() -> None:
     while (Server_Running):
-        Log.Debug("I do absolutely nothing for now.");
         Log.Carriage(f"Connected Clients: {len(Connected_Clients)}");
         time.sleep(1);
 
@@ -63,8 +62,7 @@ class Trinity_Socket:
 
         self.kwargs = kwargs;
 
-        Threads = self.Configuration;
-        Misc.Threads_Start(Threads, True);
+        self.Configuration();
 
 
     def Receive(self) -> str:
@@ -182,16 +180,14 @@ class Trinity_Socket:
                 self.Send(Command);
 
 class Trinity_Server(Trinity_Socket):
-    def Configuration(self) -> list:
+    def Configuration(self) -> None:
         self.IP = f"{self.Address[0]}:{self.Address[1]}";
         self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
         Log.Info(f"Connection: {self.Address} (Raw)");
 
-        return list(
-            self.Thread_Processor,
-            self.Thread_Receive,
-            self.Thread_Timeout
-        );
+        Misc.Thread_Start(self.Thread_Processor);
+        Misc.Thread_Start(self.Thread_Receive);
+        Misc.Thread_Start(self.Thread_Timeout);
 
     def Enable_Encryption(self) -> None:
         # This code is shit. But I can't be fucked fixing it.
@@ -216,17 +212,15 @@ class Trinity_Server(Trinity_Socket):
 
 
 class Trinity_Client(Trinity_Socket):
-    def Configuration(self) -> list:
+    def Configuration(self) -> None:
         self.Client_Public = Key_Public;
-        self.Ping = time.monotonic()*1000; self.Client.connect((self.Address, self.Port));
+        self.Ping = time.monotonic()*1000; self.Socket.connect((self.Address[0], self.Address[1]));
         self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
         self.Interactive = self.kwargs["Shell"];
-        Log.Info(f"Connected to {self.Address}:{self.Port} with a latency of {self.Ping}ms.");
+        Log.Info(f"Connected to {self.Address[0]}:{self.Address[1]} with a latency of {self.Ping}ms.");
 
-        return list(
-            self.Thread_Receive,
-            self.Thread_Shell
-        );
+        Misc.Thread_Start(self.Thread_Receive);
+        Misc.Thread_Start(self.Thread_Shell);
 
     def Enable_Encryption(self) -> None:
         # This code is shit. But I can't be fucked fixing it.
@@ -255,17 +249,15 @@ class Trinity_Client(Trinity_Socket):
 class Trinity_Ignition:
     def __init__(self, Processor, Routine, Type: str = "Relay") -> None:
         self.Processor = Processor;
-        self.Routine = Routine;
-        self.Type = Type;
 
-        match self.Type:
+        match Type:
             case "Relay": # Relay
                 Log.Info("Starting Trinity Server as a Relay...")
                 Log.Info("Loading Endpoints Configuration...");
                 Configuration = File.JSON_Read("Relay.json");
 
-                threading.Thread(target=self.Routine()).setDaemon(True).start();
-                threading.Thread(target=self.RawSocket_Thread()).setDaemon(True).start();
+                Misc.Process_Start(self.RawSocket_Thread);
+                Misc.Thread_Start(Routine);
 
             case "Endpoint":
                 Log.Info("Starting Trinity Server as an Endpoint...")
@@ -279,7 +271,6 @@ class Trinity_Ignition:
 
     def RawSocket_Thread(self, Port: int = 1407) -> None:
         Log.Info("Starting RawSockets Thread...")
-        global Socket_Raw;
         Socket_Raw = socket.socket();
         Attempts = 1;
         while True:
@@ -296,9 +287,7 @@ class Trinity_Ignition:
         S_Listen.OK();
         while Server_Running:
             Client, Address = Socket_Raw.accept();
-            Client_Thread = threading.Thread(target=Trinity_Socket(self.Processor, Client, Address, False));
-            Client_Thread.daemon = True;
-            Client_Thread.start();
+            threading.Thread(target=Trinity_Server(self.Processor, Client, Address, False)).setDaemon(True).start();
 
 # If the file is ran as is, assuming we want to start the Trinity Relay.
 if (__name__== "__main__"):
