@@ -1,167 +1,318 @@
-# Server Modules
-import socket # API's Native Language 
-import websockets # API's Translated Language
-import ssl # Required for WebSockets BS
-import urllib.request # Required for CORS Proxy
-
-# Multi-threading modules
-import asyncio # Required for WebSockets
-import _thread # Required for multi-client raw socket clients.
-import threading # Required for WebSockets
-
-# Miscellaneous Modules
-import time # Required for logs
-import os # Required for KeyboardInterrupt (DEBUG) and loading config files
-import sys # Required for KeyboardInterrupt (DEBUG)
-import configparser # Load the back-end server config file
-import json # Load the list of servers to redirect to
-import traceback # Error handling
-
-# Load sensitive information
-import dotenv
-dotenv.load_dotenv()
-
-# Own Modules
-from SN_PyDepends import *
-from SN_APIC import *
-
-Log(f'[System] Configuring server...')
-SRV_CFG = LoadCFG(os.path.basename(__file__).replace(".py", ".cfg"))
-
-""" .env Variables """
-SSL_Cert = os.getenv('SSL_Cert')
-SSL_Key = os.getenv('SSL_Key')
-
-""" .cfg Variables """
-SRV_Name = SRV_CFG["Info"]["Name"]
-SRV_Desc = SRV_CFG["Info"]["Description"]
-SRV_Vers = SRV_CFG["Info"]["Version"]
-
-Routine_Sleep = int(SRV_CFG["API"]["RoutineSleep"])
-API_RawPort = int(SRV_CFG["API"]["RawPort"])
-API_WebPort = int(SRV_CFG["API"]["WebPort"])
-API_PacketSize = int(SRV_CFG["API"]["PacketSize"])
-
-""" Processed Variables """
-API_SocketHost = socket.gethostname()
-API_RawSocket = socket.socket()
-
-SSL_Options = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-SSL_Options.load_cert_chain(SSL_Cert, keyfile=SSL_Key)
-
-with open("servers.json", "r", encoding="UTF-8") as Entries:
-    APIs = json.load(Entries)
-
-Log(f'[System] Loaded configuration for "{SRV_Name} - {SRV_Vers}", {SRV_Desc}.')
+from TSN_Abstracter import *;
+import asyncio, threading, multiprocessing;
+import websockets, socket;
+import dotenv, os;
+import time, math;
 
 
-""" Service Functions """
-def SirioAPI_Thread():
-    Log(f'[System] INFO: Initializing SirioAPI...')
+Version: str = "a250329";
+# Turn these into a dict later that can be read/modified via JSON
+Packet_Size: int = 8192;
+Server_Running: bool = True;
+Server_Max_Communication_Errors: int = 3;
+Server_Max_Communication_Length: int = 3600;
 
-    async def Server_Redirect(Client_Request,Client_Address):
-        Client_Request = Client_Request.split("://")
-        Client_Address = Client_Address.split(":")
-        if len(Client_Request) >= 2:
-            for API in APIs:
-                if Client_Request[0].upper() == API.upper():
-                    Log(f'[Forwarding] "{Client_Request[0]} API": {Client_Request[1]}')
-                    return str(SirioAPI(f"{Client_Address[0]}¤{Client_Request[1]}", APIs[API]["Address"], APIs[API]["Port"])[0]) # Janky!
-            Log(f'[ERROR] API Not Found: "{str(Client_Request)}" !')
-            return "API_NOT-FOUND"
-        else:
-            Log(f'[ERROR] Invalid Request: "{str(Client_Request)}" !')
-            return "INVALID_REQUEST"
-        
-    """ Socket Handlers """
-    def RawSocket_Server():
-        Log(f'[System] INFO: Starting RawSockets Server...')
+""" Make the IDE less angry because of the type safe functions/variables below. """
+class Trinity_Socket: pass;
+Connected_Clients: list[Trinity_Socket] = [];
 
-        async def RawSocket_Handler(Client_Socket):
-            Client, Address = Client_Socket.accept()
-            Client_Address = str(Address[0])+":"+str(Address[1])
-            Log(f'[Connection] OK: Raw://{Client_Address}.')
+def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
+    pass;
 
-            Client_Request = Client.recv(API_PacketSize).decode()
-            Log(f'[Request] Raw://{Client_Address}: "{Client_Request}".')
-            Server_Result = await Server_Redirect(Client_Request,Client_Address)
+def Trinity_Routine() -> None:
+    while (Server_Running):
+        Log.Carriage(f"Connected Clients: {len(Connected_Clients)} // {[str(Client) for Client in Connected_Clients]}");
+        time.sleep(1);
 
-            Log(f'[Sending] Raw://{Client_Address}: {Server_Result[0]}')
-            Client.send(Server_Result[0].encode())
+""" MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
+Gives us the variables "Key_Private" and "Key_Public" which are going to be used to secure communication.
+It's better to generate a new key for each client security wise but this is taxing on the server and it doesn't really
+matter anyways since the bigger problem is storing the data received rather than the currently on-going communications"""
+@lambda _: _()
+def Key_Private():
+    Log.Info("A Private Key is being generated for this session. Please hold.");
+    return Cryptography.Generate_Private();
 
-        def RawSocket_Async(RawSocket):
-            asyncio.run(RawSocket_Handler(RawSocket))
-
-        Log(f'[System] OK: RawSockets thread started.')
-        Attempt = 1
-        while True:
-            try:
-                API_RawSocket.bind((API_SocketHost, API_RawPort))
-                Log(f"[System] Success: Binded RawSocket Server in {Attempt} attempt(s).")
-                break
-            except:
-                Log(f"[System] ERROR: Failed to bind RawSocket Server! (Attempt {Attempt})")
-                Attempt+=1
-                time.sleep(1)
-        API_RawSocket.listen()
-        Log(f'[System] OK: Now listening for RawSockets.')
-        while True:
-            threading.Thread(target=RawSocket_Async(API_RawSocket)).start()
-
-    def WebSocket_Server():
-        Log(f'[System] INFO: Starting WebSockets Server...')
-
-        async def Websocket_Handler(Client):
-            # Make the client connection readable
-            Address = Client.remote_address
-            Client_Address = str(Address[0])+":"+str(Address[1])
-
-            Log(f'[Connection] OK: Web://{Client_Address}.')
-            
-            Client_Request = await Client.recv()
-            Log(f'[Request] Web://{Client_Address}: "{Client_Request}".')
-            Server_Result = await Server_Redirect(Client_Request,Client_Address)
-            Log(f'[Sending] Web://{Client_Address}: {Server_Result}')
-            await Client.send(Server_Result)
-
-        async def Websocket_Listener():
-            Log(f'[System] OK: WebSockets thread started.')
-            async with websockets.serve(Websocket_Handler, "0.0.0.0", API_WebPort, ssl=SSL_Options):
-                await asyncio.Future()
-        asyncio.run(Websocket_Listener())
-
-    threading.Thread(target=RawSocket_Server).start()
-    threading.Thread(target=WebSocket_Server).start()
+@lambda _: _()
+def Key_Public():
+    Log.Info("A Public Key is being generated for this session. Please hold.");
+    return Cryptography.Generate_Public(Key_Private);
 
 
-""" Server State Functions """
 
-def Shutdown():
-    Log(f'[System] SHUTDOWN: Shutting down server...')
-    DWeb_Title = f'The "{SRV_Name}" Server is offline!'
-    DWeb_Desc = "Trinity is the Front-End Server for the Sirio Network API. All services such as the Flashcord API, Sirio News API and etc are now unreachable! <@311057290562371586> will soon provide more information."
-    # DWeb_Send(DWeb_Title, DWeb_Desc, "Public")
-    try: sys.exit(130)
-    except SystemExit: os._exit(130)
+class Trinity_Socket:
+    def __init__(
+            self, 
+            Processor = None, 
+            Socket: socket.socket = socket.socket(),
+            Address: tuple[str, int] = ("localhost", "1407"),
+            WebSocket: bool = False,
+            Tickrate: int = 0.01,
+            **kwargs
+        ) -> None:
+        """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
+        doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
+        Connected_Clients.append(self);
+        self.Socket = Socket;
+        self.Address = Address;
+
+        self.WebSocket = WebSocket;
+        self.Processor = Processor;
+        self.Tickrate = Tickrate;
+
+        self.Communication_Errors: int = 0;
+        self.Auth_Level: int = 0;
+
+        self.Secure = True if (self.WebSocket) else False;
+        self.Connected = self.Listen = True;
+        self.Queue: list[str | bytes] = [];
+        self.Listen_Accident: str = None;
+
+        self.kwargs = kwargs;
+
+        self.Configuration();
     
-def Bootstrap():
-    os.system("clear")
-    Log(f"[System] Starting server...")
-    threading.Thread(target=SirioAPI_Thread).start()
-    Log(f'[System] Server initialized.')
-    DWeb_Title = f'The "{SRV_Name}" Server is now online!'
-    DWeb_Desc = "Trinity is the Front-End Server for the Sirio Network API. All services such as the Flashcord API, Sirio News API and etc are now accessible."
-    # DWeb_Send(DWeb_Title, DWeb_Desc, "Public")
-    try:
-        while True: 
-            Log(f'[System] Awaiting next Routine Loop in {Routine_Sleep} seconds.')
-            time.sleep(Routine_Sleep)
-            Log(f'[System] Executing Routine.')
-    except KeyboardInterrupt:
-        Shutdown()
+    def __str__(self):
+        return self.Address;
 
-# Spark
-if __name__== '__main__': 
-    while True:
-        try: Bootstrap()
-        except Exception: Crash(traceback.format_exc(),False)
+    def Configuration(self) -> None:
+        Log.Critical("Trinity Socket was Initialized without any configuration!");
+        self.Connected = False;
+        Connected_Clients.remove(self);
+
+    def Receive(self) -> str:
+        try:
+            # Receive Data
+            if (self.WebSocket):
+                Data = self.Socket.recv();
+            else:
+                if (self.Secure):
+                    Data = Cryptography.Decrypt(Key_Private, self.Socket.recv(Packet_Size));
+                else:
+                    Data = self.Socket.recv(Packet_Size).decode();
+            
+            # Null Check
+            if (Data != ""):
+                return Data;
+            self.Communication_Failed();
+        
+        except Exception as Except:
+            Log.Error(Except);
+            self.Communication_Failed();
+
+    def Send(self, Data: str | bytes) -> bool:
+        def Send_WebSocket(Data: str) -> bool:
+            S_Send = Log.Info(f"{Data} -> {self.Address}")
+            try:
+                self.Socket.send(Data);
+                S_Send.OK();
+                return True;
+            except Exception as Except:
+                S_Send.ERROR(Except);
+                self.Communication_Failed();
+                return False;
+
+        def Send_RawSocket(Data: str | bytes) -> bool:
+            if (self.Secure):
+                S_Send = Log.Info(f"{Data} -> {self.Address} (Encrypted)")
+                Message = Cryptography.Encrypt(self.Client_Public, Data);
+            elif (type(Data) == bytes):
+                S_Send = Log.Info(f"{Data} -> {self.Address} (Public Key)")
+                Message = Data;
+            else:
+                S_Send = Log.Info(f"{Data} -> {self.Address} (Unencrypted)")
+                Message = Data.encode("UTF-8");
+
+            try:
+                self.Socket.send(Message);
+                S_Send.OK();
+                return True;
+            except Exception as Except:
+                S_Send.ERROR(Except);
+                return False;
+    
+        if (self.WebSocket):
+            return Send_WebSocket(Data);
+        return Send_RawSocket(Data);
+
+    def Terminate(self) -> None:
+        S_Close = Log.Info(f"Closing {self.Address}...");
+        self.Connected = self.Listen = False;
+        try:
+            self.Send_Code("CLOSING");
+            self.Client.close();
+        except:
+            Misc.Void();
+        S_Close.OK();
+        Connected_Clients.remove(self);
+
+
+    def Send_Code(self, Message: str) -> bool:
+        return self.Send(f"CODE¤{Message}");
+
+    def Communication_Failed(self) -> None:
+        Log.Debug(f"{self.Address} [!] {Log.Get_Caller(3)}()");
+        self.Communication_Errors += 1;
+        if (self.Communication_Errors >= Server_Max_Communication_Errors):
+            self.Terminate();
+
+
+    def Thread_Processor(self):
+        while (self.Connected):
+            if (self.Queue != []):
+               if (self.Queue[0] == "SYS¤Encrypt"):
+                   self.Enable_Encryption();
+               elif (self.Processor(self, self.Queue[0])):
+                   self.Queue.pop(0);
+            else:
+                time.sleep(self.Tickrate);
+
+    def Thread_Receive(self):
+        # This system is retarded but works. Mostly cause it only has issues with Enable_Encryption()
+        while (self.Connected):
+            while (self.Listen):
+                New_Message = self.Receive();
+                if (New_Message != None):
+                    Log.Info(f"{self.Address} -> {New_Message}");
+                    self.Queue.append(New_Message);
+                time.sleep(self.Tickrate);
+                print("waiting for msg")
+            time.sleep(self.Tickrate);
+    
+    def Thread_Timeout(self):
+        # Terminate a client if they're connected for more than an hour by default.
+        time.sleep(Server_Max_Communication_Length);
+        self.Send_Code("CONNECTION_LENGTH_EXCEEDED");
+        self.Terminate();
+
+class Trinity_Server(Trinity_Socket):
+    def Configuration(self) -> None:
+        self.IP = f"{self.Address[0]}:{self.Address[1]}";
+        self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
+        Log.Info(f"Connection: {self.Address} (Raw)");
+
+        Misc.Thread_Start(self.Thread_Processor);
+        Misc.Thread_Start(self.Thread_Receive);
+        Misc.Thread_Start(self.Thread_Timeout);
+
+    def Enable_Encryption(self) -> None:
+        # This code is shit. But I can't be fucked fixing it.
+        self.Queue = [];
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
+        
+        self.Client_Public = Cryptography.Load_Public(self.Queue[0]);
+        self.Queue.pop(0);
+        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
+        
+        self.Secure = True;
+
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
+        if (self.Queue[0] == "Hugging a Mika a day, keeps your sanity away~"):
+            self.Send_Code("OK");
+        else:
+            self.Send_Code("DECRYPTED_UNEXPECTED");
+            self.Secure = False;
+        self.Queue.pop(0);
+
+
+class Trinity_Client(Trinity_Socket):
+    def Configuration(self) -> None:
+        self.Client_Public = Key_Public;
+        self.Ping = time.monotonic()*1000; self.Socket.connect((self.Address[0], self.Address[1]));
+        self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
+        self.Interactive = self.kwargs["Shell"];
+        Log.Info(f"Connected to {self.Address[0]}:{self.Address[1]} with a latency of {self.Ping}ms.");
+
+        Misc.Thread_Start(self.Thread_Shell);
+        self.Thread_Receive();
+
+    def Thread_Shell(self) -> None:
+        while (self.Connected and self.Interactive):
+            Command = input(f"Trinity://");
+            if (Command == "SYS¤Encrypt"):
+                self.Send(Command);
+                self.Enable_Encryption();
+            else:
+                self.Send(Command);
+    
+    def Enable_Encryption(self) -> None:
+        # This code is shit. But I can't be fucked fixing it.
+        self.Queue = [];
+
+        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
+        self.Server_Public = Cryptography.Load_Public(self.Queue[0]);
+        
+        self.Secure = True;
+        self.Queue = [];
+        self.Send("Hugging a Mika a day, keeps your sanity away~");
+        while (self.Queue == []):
+            time.sleep(self.Tickrate);
+        if (self.Queue[0] != "CODE¤OK"):
+            self.Secure = False;
+        self.Queue = [];
+
+    def Communication_Failed(self) -> None: return;
+
+
+
+
+
+class Trinity_Ignition:
+    def __init__(self, Processor, Routine, Type: str = "Relay") -> None:
+        self.Processor = Processor;
+
+        match Type:
+            case "Relay": # Relay
+                Log.Info("Starting Trinity Server as a Relay...")
+                Log.Info("Loading Endpoints Configuration...");
+                Configuration = File.JSON_Read("Relay.json");
+
+                Misc.Thread_Start(self.RawSocket_Thread);
+                Routine();
+
+            case "Endpoint":
+                Log.Info("Starting Trinity Server as an Endpoint...")
+                pass;
+            case "Heartbeat":
+                Log.Info("Starting Trinity Endpoint Heartbeat...")
+                pass;
+            case _:
+                Log.Critical(f"Unknown Trinity Server Type: {self.Type}. Shutting down.")
+                quit();
+
+    def RawSocket_Thread(self, Port: int = 1407) -> None:
+        Log.Info("Starting RawSockets Thread...")
+        Socket_Raw = socket.socket();
+        Attempts = 1;
+        while True:
+            Log.Carriage(f"Attempting to bind RawSocket... (Attempt {Attempts})");
+            try:
+                Socket_Raw.bind(("0.0.0.0", Port));
+                Log.Info(f"Successfully binded RawSocket in {Attempts} Attempts.");
+                break;
+            except:
+                Attempts += 1;
+                time.sleep(1);
+        S_Listen = Log.Info(f"Listening for RawSockets...");
+        Socket_Raw.listen();
+        S_Listen.OK();
+        while Server_Running:
+            Client, Address = Socket_Raw.accept();
+            Misc.Thread_Start(
+                Trinity_Server,
+                (self.Processor, Client, Address, False), 
+                True
+            );
+
+# If the file is ran as is, assuming we want to start the Trinity Relay.
+if (__name__== "__main__"):
+    Log.Delete(); # DEBUG
+
+    Config.Logging["File"] = True; # Allow Log Files
+    Config.Logging["Print_Level"] = 0; # Show ALL messages
+    dotenv.load_dotenv()
+    Trinity_Ignition(Processor=Trinity_Relayer, Routine=Trinity_Routine, Type="Relay");
