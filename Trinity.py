@@ -78,6 +78,7 @@ class Trinity_Socket:
     def Configuration(self) -> None:
         Log.Critical("Trinity Socket was Initialized without any configuration!");
         self.Connected = False;
+        Connected_Clients.remove(self);
 
     def Receive(self) -> str:
         try:
@@ -93,8 +94,7 @@ class Trinity_Socket:
             # Null Check
             if (Data != ""):
                 return Data;
-            else:
-                self.Communication_Failed();
+            self.Communication_Failed();
         
         except Exception as Except:
             Log.Error(Except);
@@ -184,15 +184,6 @@ class Trinity_Socket:
         time.sleep(Server_Max_Communication_Length);
         self.Send_Code("CONNECTION_LENGTH_EXCEEDED");
         self.Terminate();
-    
-    def Thread_Shell(self) -> None:
-        while (self.Connected and self.Interactive):
-            Command = input(f"Trinity://");
-            if (Command == "SYS¤Encrypt"):
-                self.Send(Command);
-                self.Enable_Encryption();
-            else:
-                self.Send(Command);
 
 class Trinity_Server(Trinity_Socket):
     def Configuration(self) -> None:
@@ -234,9 +225,18 @@ class Trinity_Client(Trinity_Socket):
         self.Interactive = self.kwargs["Shell"];
         Log.Info(f"Connected to {self.Address[0]}:{self.Address[1]} with a latency of {self.Ping}ms.");
 
-        Misc.Thread_Start(self.Thread_Receive);
         Misc.Thread_Start(self.Thread_Shell);
+        self.Thread_Receive();
 
+    def Thread_Shell(self) -> None:
+        while (self.Connected and self.Interactive):
+            Command = input(f"Trinity://");
+            if (Command == "SYS¤Encrypt"):
+                self.Send(Command);
+                self.Enable_Encryption();
+            else:
+                self.Send(Command);
+    
     def Enable_Encryption(self) -> None:
         # This code is shit. But I can't be fucked fixing it.
         self.Queue = [];
