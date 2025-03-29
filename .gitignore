@@ -4,3 +4,4 @@
 
 # nuh uh no compiled python in my repository
 *.pyc
+.vscode/*
