@@ -21,7 +21,7 @@ def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
 
 def Trinity_Routine() -> None:
     while (Server_Running):
-        Log.Carriage(f"Connected Clients: {len(Connected_Clients)}");
+        Log.Carriage(f"Connected Clients: {len(Connected_Clients)} // {[str(Client) for Client in Connected_Clients]}");
         time.sleep(1);
 
 """ MEGA Cursed Syntax I'm aware, these functions are ran once and gives us the Keys for the server.
@@ -71,6 +71,9 @@ class Trinity_Socket:
         self.kwargs = kwargs;
 
         self.Configuration();
+    
+    def __str__(self):
+        return self.Address;
 
     def Configuration(self) -> None:
         Log.Critical("Trinity Socket was Initialized without any configuration!");
@@ -90,9 +93,11 @@ class Trinity_Socket:
             # Null Check
             if (Data != ""):
                 return Data;
-            self.Communication_Failed();
+            else:
+                self.Communication_Failed();
         
         except Exception as Except:
+            Log.Error(Except);
             self.Communication_Failed();
 
     def Send(self, Data: str | bytes) -> bool:
@@ -146,6 +151,7 @@ class Trinity_Socket:
         return self.Send(f"CODE¤{Message}");
 
     def Communication_Failed(self) -> None:
+        Log.Debug(f"{self.Address} [!] {Log.Get_Caller(3)}()");
         self.Communication_Errors += 1;
         if (self.Communication_Errors >= Server_Max_Communication_Errors):
             self.Terminate();
