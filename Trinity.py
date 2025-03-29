@@ -5,7 +5,7 @@ import dotenv, os;
 import time, math;
 
 
-Version: str = "a250311";
+Version: str = "a250329";
 # Turn these into a dict later that can be read/modified via JSON
 Packet_Size: int = 8192;
 Server_Running: bool = True;
@@ -41,7 +41,15 @@ def Key_Public():
 
 
 class Trinity_Socket:
-    def __init__(self, Processor = None, Socket: socket.socket = socket.socket(), Address: tuple[str, int] = ("localhost", "1407"), WebSocket: bool = False, Tickrate: int = 0.01, **kwargs) -> None:
+    def __init__(
+            self, 
+            Processor = None, 
+            Socket: socket.socket = socket.socket(),
+            Address: tuple[str, int] = ("localhost", "1407"),
+            WebSocket: bool = False,
+            Tickrate: int = 0.01,
+            **kwargs
+        ) -> None:
         """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         Connected_Clients.append(self);
@@ -64,6 +72,9 @@ class Trinity_Socket:
 
         self.Configuration();
 
+    def Configuration(self) -> None:
+        Log.Critical("Trinity Socket was Initialized without any configuration!");
+        self.Connected = False;
 
     def Receive(self) -> str:
         try:
@@ -79,8 +90,7 @@ class Trinity_Socket:
             # Null Check
             if (Data != ""):
                 return Data;
-            else:
-                self.Communication_Failed();
+            self.Communication_Failed();
         
         except Exception as Except:
             self.Communication_Failed();
@@ -118,8 +128,7 @@ class Trinity_Socket:
     
         if (self.WebSocket):
             return Send_WebSocket(Data);
-        else:
-            return Send_RawSocket(Data);
+        return Send_RawSocket(Data);
 
     def Terminate(self) -> None:
         S_Close = Log.Info(f"Closing {self.Address}...");
@@ -256,8 +265,8 @@ class Trinity_Ignition:
                 Log.Info("Loading Endpoints Configuration...");
                 Configuration = File.JSON_Read("Relay.json");
 
-                Misc.Process_Start(self.RawSocket_Thread);
-                Misc.Thread_Start(Routine);
+                Misc.Thread_Start(self.RawSocket_Thread);
+                Routine();
 
             case "Endpoint":
                 Log.Info("Starting Trinity Server as an Endpoint...")
@@ -287,7 +296,11 @@ class Trinity_Ignition:
         S_Listen.OK();
         while Server_Running:
             Client, Address = Socket_Raw.accept();
-            threading.Thread(target=Trinity_Server(self.Processor, Client, Address, False)).setDaemon(True).start();
+            Misc.Thread_Start(
+                Trinity_Server,
+                (self.Processor, Client, Address, False), 
+                True
+            );
 
 # If the file is ran as is, assuming we want to start the Trinity Relay.
 if (__name__== "__main__"):
