@@ -1,6 +1,6 @@
 from TSN_Abstracter import *;
 import asyncio, threading, multiprocessing;
-import websockets;
+import websockets, socket;
 import dotenv, os;
 import time, math;
 
@@ -45,17 +45,19 @@ class Trinity_Socket:
     def __init__(
             self, 
             Processor = None, 
-            WebSocket: websockets.client,
-            Address: tuple[str] = ("wss://localhost:440"),
+            Socket: socket.socket = socket.socket(),
+            Address: tuple[str, int] = ("localhost", "1407"),
+            WebSocket: bool = False,
             Tickrate: int = 0.01,
             **kwargs
         ) -> None:
         """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         Connected_Clients.append(self);
-        self.Socket = WebSocket;
+        self.Socket = Socket;
         self.Address = Address;
 
+        self.WebSocket = WebSocket;
         self.Processor = Processor;
         self.Tickrate = Tickrate;
 
