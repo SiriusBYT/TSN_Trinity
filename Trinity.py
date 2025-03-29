@@ -17,7 +17,8 @@ class Trinity_Socket: pass;
 Connected_Clients: list[Trinity_Socket] = [];
 
 def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
-    pass;
+    Client.Send(Command);
+    return True;
 
 def Trinity_Routine() -> None:
     while (Server_Running):
@@ -64,9 +65,8 @@ class Trinity_Socket:
         self.Auth_Level: int = 0;
 
         self.Secure = True if (self.WebSocket) else False;
-        self.Connected = self.Listen = True;
+        self.Connected = self.Process_Auto = True;
         self.Queue: list[str | bytes] = [];
-        self.Listen_Accident: str = None;
 
         self.kwargs = kwargs;
 
@@ -74,6 +74,12 @@ class Trinity_Socket:
     
     def __str__(self):
         return self.Address;
+
+    def Queue_Wait(self) -> None:
+        """ Wait until the queue is no longer empty """
+        while (len(self.Queue) == 0):
+            time.sleep(self.Tickrate);
+        return;
 
     def Configuration(self) -> None:
         Log.Critical("Trinity Socket was Initialized without any configuration!");
@@ -137,7 +143,7 @@ class Trinity_Socket:
 
     def Terminate(self) -> None:
         S_Close = Log.Info(f"Closing {self.Address}...");
-        self.Connected = self.Listen = False;
+        self.Connected = self.Process_Auto = False;
         try:
             self.Send_Code("CLOSING");
             self.Client.close();
@@ -161,22 +167,25 @@ class Trinity_Socket:
         while (self.Connected):
             if (self.Queue != []):
                if (self.Queue[0] == "SYS¤Encrypt"):
+                   self.Process_Auto = False;
                    self.Enable_Encryption();
-               elif (self.Processor(self, self.Queue[0])):
-                   self.Queue.pop(0);
+                   self.Process_Auto = True;
+               else:
+                   if (self.Process_Auto):
+                       if (self.Processor(self, self.Queue[0])):
+                           self.Queue.pop(0);
+                   else:
+                       time.sleep(self.Tickrate);
             else:
                 time.sleep(self.Tickrate);
 
     def Thread_Receive(self):
         # This system is retarded but works. Mostly cause it only has issues with Enable_Encryption()
         while (self.Connected):
-            while (self.Listen):
-                New_Message = self.Receive();
-                if (New_Message != None):
-                    Log.Info(f"{self.Address} -> {New_Message}");
-                    self.Queue.append(New_Message);
-                time.sleep(self.Tickrate);
-                print("waiting for msg")
+            New_Message = self.Receive();
+            if (New_Message != None):
+                Log.Info(f"{self.Address} -> {New_Message}");
+                self.Queue.append(New_Message);
             time.sleep(self.Tickrate);
     
     def Thread_Timeout(self):
@@ -197,18 +206,16 @@ class Trinity_Server(Trinity_Socket):
 
     def Enable_Encryption(self) -> None:
         # This code is shit. But I can't be fucked fixing it.
-        self.Queue = [];
-        while (self.Queue == []):
-            time.sleep(self.Tickrate);
+        self.Queue.pop(0);
         
-        self.Client_Public = Cryptography.Load_Public(self.Queue[0]);
+        self.Queue_Wait();
+        self.Client_Public = Cryptography.Load_Public(self.Queue[0].encode("utf-8"));
         self.Queue.pop(0);
         self.Send(Cryptography.Get_Bytes_Public(Key_Public));
         
         self.Secure = True;
 
-        while (self.Queue == []):
-            time.sleep(self.Tickrate);
+        self.Queue_Wait();
         if (self.Queue[0] == "Hugging a Mika a day, keeps your sanity away~"):
             self.Send_Code("OK");
         else:
@@ -227,6 +234,20 @@ class Trinity_Client(Trinity_Socket):
 
         Misc.Thread_Start(self.Thread_Shell);
         self.Thread_Receive();
+    
+    def Enable_Encryption(self) -> None:
+        # This code is shit. But I can't be fucked fixing it.
+        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
+        self.Queue_Wait();
+        self.Server_Public = Cryptography.Load_Public(self.Queue[0].encode("utf-8"));
+        self.Queue.pop(0);
+
+        self.Secure = True;
+        self.Send("Hugging a Mika a day, keeps your sanity away~");
+        self.Queue_Wait();
+        if (self.Queue[0] != "CODE¤OK"):
+            self.Secure = False;
+        self.Queue.pop(0);
 
     def Thread_Shell(self) -> None:
         while (self.Connected and self.Interactive):
@@ -236,24 +257,6 @@ class Trinity_Client(Trinity_Socket):
                 self.Enable_Encryption();
             else:
                 self.Send(Command);
-    
-    def Enable_Encryption(self) -> None:
-        # This code is shit. But I can't be fucked fixing it.
-        self.Queue = [];
-
-        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
-        while (self.Queue == []):
-            time.sleep(self.Tickrate);
-        self.Server_Public = Cryptography.Load_Public(self.Queue[0]);
-        
-        self.Secure = True;
-        self.Queue = [];
-        self.Send("Hugging a Mika a day, keeps your sanity away~");
-        while (self.Queue == []):
-            time.sleep(self.Tickrate);
-        if (self.Queue[0] != "CODE¤OK"):
-            self.Secure = False;
-        self.Queue = [];
 
     def Communication_Failed(self) -> None: return;
 
