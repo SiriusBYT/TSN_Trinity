@@ -230,7 +230,23 @@ class Trinity_Ignition:
             WS.serve_forever();
     
     def Trinity_Relayer(self, Client: Trinity_Server, Command: str) -> bool:
-        Client.Send(Command);
+        """
+        True = Processed Request Successfully
+        False = Need to retry processing due to internal error
+        """
+
+        # Make sure the request is in a valid format
+        if ("¤" in Command):
+            Command = Command.split("¤", 1);
+        else:
+            Client.Send_Code("INVALID_FORMAT");
+            return True;
+        if (Command[0] == "Trinity"):
+            match Command[1]:
+                case "Version":
+                    Client.Send(Trinity_Version)
+                case "Uptime":
+                    Client.Send(Trinity_LUnix);
         return True;
 
     def Trinity_Routine(self) -> None:
@@ -254,7 +270,8 @@ class Trinity_Ignition:
 
 
 
-Version: str = "a250330";
+Trinity_Version: str = "a250330";
+Trinity_LUnix: int = Time.Get_Unix();
 Connected_Clients: list[Trinity_Server] = [];
 Server_Running: bool = True;
 
