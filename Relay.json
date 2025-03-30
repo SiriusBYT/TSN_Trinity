@@ -1,9 +1,9 @@
 {
     "Nodes": {
-        "Echo": {
+        "QNF": {
             "Type": "API",
             "Address": "ws://localhost:1407",
-            "Security": 1
+            "Security": -1
         }
     },
     "Settings": {

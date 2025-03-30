@@ -166,15 +166,17 @@ class Trinity_Requester(Trinity_Socket):
     def __init__(
             self, 
             Request: str,
+            Origin: str,
             Address: str = "ws://localhost:8080"
         ):
         self.Request: str = Request;
+        self.Origin: str = Origin;
         self.Address: str = Address;
     
     def Requester(self) -> str:
         try:
             self.Socket = connect(self.Address);
-            self.Send(self.Request);
+            self.Send(f"{self.Origin}¤{self.Request}");
             for Request in self.Socket:
                 if (Request != ""):
                     Log.Info(f"{self.Address} <- {Request}");
@@ -243,9 +245,15 @@ class Trinity_Ignition:
 
     def Node_Thread(self, Node_Name: str, Node_Address: str) -> None:
         def Node_Processor(Node: Trinity_Client, Command: str):
-            # Assume every Node Message is a broadcast to ALL clients.
-            for Client in Connected_Clients:
-                Client.Send(f"{Node_Name}¤{Command}");
+            Command = Command.split("¤", 1);
+            Destination: str = Command[0];
+            if (Destination == "ALL"):
+                for Client in Connected_Clients:
+                    Client.Send(f"{Node_Name}¤{Command}");
+            else:
+                for Client in Connected_Clients:
+                    if (Destination == Client.Address):
+                        Client.Send(f"{Node_Name}¤{Command}");
             Node.Queue.pop(0);
         
         def Node_Threader(Node_Address: str, Node_ID: str) -> None:
@@ -311,7 +319,7 @@ class Trinity_Ignition:
                     Client.Send_Code("INVALID_COMMAND");
         else:
             if (Command[0] in self.Nodes):
-                Client.Send(Trinity_Requester(Command[1], self.Config["Nodes"][Command[0]]["Address"]).Requester());
+                Client.Send(Trinity_Requester(Command[1], Client.Address, self.Config["Nodes"][Command[0]]["Address"]).Requester());
             else:
                 Client.Send_Code("ENDPOINT_UNKNOWN");
         return True;
@@ -347,5 +355,5 @@ if (__name__== "__main__"):
     Log.Delete(); # DEBUG
 
     Config.Logging["File"] = True; # Allow Log Files
-    Config.Logging["Print_Level"] = 0; # Show ALL messages
+    Config.Logging["Print_Level"] = 20; # Show ALL messages
     Trinity_Ignition(Type="Relay");

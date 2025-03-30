@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html SNDL-Theme="Light" lang="en-GB">
+    <head>
+        <title>Welcome to SNDL</title>
+        <!-- SNWE SEO -->
+        <meta name="description" content="This is the Sirio Design Language, a semi-minimalist visual style based on blurring effects.">
+        <meta name="author" content="Ascellayn">
+        <!-- SNWE Embed -->
+        <meta content="Welcome to SNDL!" property="og:title" />
+        <meta content="This is the Sirio Design Language, a semi-minimalist visual style based on blurring effects." property="og:description" />
+        <meta content="#3769FF" data-react-helmet="true" name="theme-color" />
+        <meta name="twitter:card" content="summary_large_image">
+        <!-- SNWE External -->
+        <link rel="stylesheet" href="/sndl/css/main.css">
+        <script src="/sndl/js/main.js"></script>
+        <!-- SNWE Misc-->
+        <meta charset="utf-8">
+        <meta name="viewport" content="height=device-height, width=device-width, initial-scale=0.5">
+        <!-- SNDL-JS Dependencies -->
+    </head>
+    <script>
+        const Awaited_Objects = ["SNDL_Navigation", "SNDL_WorkInProgress"];
+    </script>
+    <body>
+        <div id="Background"></div>
+        <div id="Root">
+            <div id="Base">
+                <h1>SN-API Javascript Websocket Client</h1>
+                <div class="SNDL-Quote SNDL-C_Orange">
+                    <div>
+                        <h2>Note:</h2>
+                        <p>This page only returns the result of a given API request. Obviously nothing is done afterwards. If you're writing an automated script please avoid using this client, use the python version instead.</p>
+                        <p>The Websocket Client was designed primarily only for sending/receiving the amount of views X or Y thing was or for building the Flashcord Store.</p>
+                        <button style="margin-left: 1rem;" onclick="ThemeSwitcher(this,'☀️ Light Mode', '🌕 Dark Mode','h3')"><h3 title="Switch to Light Mode">☀️ Light Mode</h3></button>
+                    </div>
+                </div>
+                <div class="SNDL-Flex" style="min-width: 50vw;">
+                    <input class="SNDL-Contain_Basic" id="API_Input" type="text" placeholder="Insert API Request" style="width: calc(100% - 50%);">
+                    <button class="SNDL-C_Warning">
+                        <a href="#" onclick="FlashstoreAPI_Requester()">
+                            <p>Initiate Request</p>
+                        </a>
+                    </button>
+                </div>
+                <div>
+                    <h3 id="API_Result" style="text-align: center;">Result:</h3>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
