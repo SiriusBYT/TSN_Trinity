@@ -21,6 +21,8 @@ class Trinity_Socket:
         """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         self.Socket = WebSocket;
+        if (self.Socket != None):
+            Connected_Clients.append(self);
         self.Address: str = f"{self.Socket.remote_address[0]}:{self.Socket.remote_address[1]}" if (WebSocket != None) else Address;
 
         self.Processor = Processor;
@@ -92,7 +94,11 @@ class Trinity_Socket:
                     self.Queue.append(Request);
                 if (not self.Connected):
                     return;
-        except:
+        except websockets.exceptions.ConnectionClosedError:
+            Log.Warning(f"Disconnected: {self.Address}")
+            self.Terminate();
+        except Exception as Except:
+            Log.Warning(Except);
             self.Communication_Failed();
     
     def Thread_Processor(self):
@@ -160,42 +166,41 @@ class Trinity_Ignition:
 
         match Type:
             case "Relay": # Relay
-                Log.Info("Starting Trinity Server as a Relay...")
+                Log.Info("Starting Trinity Server as a Relay")
                 self.Processor = self.Trinity_Relayer if (Processor == None) else Processor;
                 self.Routine = self.Trinity_Routine if (Routine == None) else Routine;
 
-                Log.Info("Loading Endpoints Configuration...");
+                Log.Info("Loading Endpoints Configuration");
                 self.Configuration: dict = File.JSON_Read("Relay.json");
-                Log.Debug("Loading Nodes...")
+                Log.Debug("Loading Nodes")
                 self.Nodes: dict = {};
                 for Node in self.Configuration["Nodes"]:
                     self.Nodes[Node] = {
                         "Connected": False,
                         "Socket": None,
                     };
-                self.Node_Reconnect();
 
                 global Packet_Size, Server_Max_Communication_Errors, Server_Max_Communication_Length;
-                Log.Debug("Loading Relay Settings...")
+                Log.Debug("Loading Relay Settings")
                 Packet_Size = self.Configuration["Settings"]["Packet_Size"];
                 Server_Max_Communication_Errors = self.Configuration["Settings"]["Server_Max_Communication_Errors"];
                 Server_Max_Communication_Length = self.Configuration["Settings"]["Server_Max_Communication_Length"];
 
-                asyncio.run(self.WebSocket_Thread());
+                Misc.Thread_Start(self.WebSocket_Thread);
                 self.Routine();
 
             case "Endpoint":
-                Log.Info("Starting Trinity Server as an Endpoint...")
+                Log.Info("Starting Trinity Server as an Endpoint")
                 pass;
             case "Heartbeat":
-                Log.Info("Starting Trinity Endpoint Heartbeat...")
+                Log.Info("Starting Trinity Endpoint Heartbeat")
                 pass;
             case _:
                 Log.Critical(f"Unknown Trinity Server Type: {self.Type}. Shutting down.")
                 quit();
     
     def Node_Reconnect(self) -> None:
-        Log.Debug("Reconnecting Nodes...")
+        Log.Debug("Reconnecting Nodes")
         for Node in self.Configuration["Nodes"]:
             if (self.Nodes[Node]["Connected"] == False):
                 Log.Debug(f"Attempting to reestablish link with {Node}.")
@@ -211,16 +216,15 @@ class Trinity_Ignition:
             while (self.Nodes[Node_Name]["Socket"].Connected == True):
                 self.Nodes[Node_Name]["Connected"] = True;
                 time.sleep(60)
-        except Exception as Except:
-            Log.Critical(f"Node {Node_Name} might be down:\nEXCEPTION:\n\t{Except}")
-            Misc.Void();
+        except: Misc.Void();
+        Log.Critical(f"Node {Node_Name} is down!")
         self.Nodes[Node_Name]["Connected"] = False;
 
 
-    async def WebSocket_Thread(self, Port: int = 8080) -> None:
+    def WebSocket_Thread(self, Port: int = 8080) -> None:
         Log.Info("Started WebSockets Thread.");
         def Web_Threader(WebSocket) -> None:
-            Connected_Clients.append(Trinity_Server(self.Processor, WebSocket));
+            Trinity_Server(self.Processor, WebSocket);
 
         with serve(Web_Threader, "0.0.0.0", Port) as WS:
             WS.serve_forever();
@@ -230,14 +234,23 @@ class Trinity_Ignition:
         return True;
 
     def Trinity_Routine(self) -> None:
+        Reconnect_Delay: int = 60;
+        Delay_Tick: int = 60;
         while (Server_Running):
-            Log.Debug("Hi")
-            Log.Carriage(f"Connected Clients: {len(Connected_Clients)} // {len(self.Nodes)} Nodes out of {len(self.Configuration["Nodes"])} Connected.");
-            time.sleep(1);
+            if (Delay_Tick == Reconnect_Delay):
+                Delay_Tick: int = 0
+                Nodes_Connected: int = 0;
+                for Node in self.Nodes:
+                    if (self.Nodes[Node]["Connected"] == True):
+                        Nodes_Connected+=1;
+                self.Node_Reconnect();
+
             for Client in Connected_Clients:
                 if (not Client.Connected):
                     Connected_Clients.remove(Client);
-            self.Node_Reconnect();
+            Log.Carriage(f"[Nodes: {Nodes_Connected}/{len(self.Configuration["Nodes"])}] - [Clients: {len(Connected_Clients)}]");
+            time.sleep(1);
+            Delay_Tick+=1;
 
 
 
