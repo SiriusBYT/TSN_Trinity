@@ -1,13 +1,10 @@
 from TSN_Abstracter import *;
 
-import asyncio;
-
 import websockets;
 from websockets.sync.server import serve;
 from websockets.sync.client import connect;
 
-import dotenv;
-import time, math;
+import time, math, psutil;
 
 class Trinity_Socket:
     def __init__(
@@ -24,6 +21,7 @@ class Trinity_Socket:
         if (self.Socket != None):
             Connected_Clients.append(self);
         self.Address: str = f"{self.Socket.remote_address[0]}:{self.Socket.remote_address[1]}" if (WebSocket != None) else Address;
+        self.Last_Sent: str = "";
 
         self.Processor = Processor;
         self.Tickrate: int = Tickrate;
@@ -54,11 +52,12 @@ class Trinity_Socket:
         self.Connected = False;
         Connected_Clients.remove(self);
 
-    def Send(self, Data: str | bytes) -> bool:
-        S_Send = Log.Info(f"{Data} -> {self.Address}")
+    def Send(self, Data: str) -> bool:
+        S_Send = Log.Info(f"{Data} -> {self.Address}");
         try:
             self.Socket.send(Data);
             S_Send.OK();
+            self.Last_Sent: str = Data;
             return True;
         except Exception as Except:
             S_Send.ERROR(Except);
@@ -150,9 +149,8 @@ class Trinity_Client(Trinity_Socket):
     def Thread_Shell(self) -> None:
         while (self.Connected and self.Interactive):
             Command = input(f"Trinity://");
-            self.Send(Command);
-            if (Command == "CODE¤Closing"):
-                return;
+            if (Command != ""): self.Send(Command);
+            if (Command == "CODE¤Closing"): return;
 
     def Communication_Failed(self) -> None: return;
 
@@ -234,19 +232,29 @@ class Trinity_Ignition:
         True = Processed Request Successfully
         False = Need to retry processing due to internal error
         """
-
         # Make sure the request is in a valid format
         if ("¤" in Command):
             Command = Command.split("¤", 1);
         else:
             Client.Send_Code("INVALID_FORMAT");
             return True;
+    
+        # Internal Relay Commands
         if (Command[0] == "Trinity"):
             match Command[1]:
                 case "Version":
-                    Client.Send(Trinity_Version)
+                    Client.Send(Trinity_Version);
+                case "Heartbeat":
+                    Client.Send(f"{psutil.cpu_percent(0.01)}¤{psutil.virtual_memory().available}¤{psutil.virtual_memory().total}")
                 case "Uptime":
-                    Client.Send(Trinity_LUnix);
+                    Client.Send(str(Trinity_LUnix));
+                case _:
+                    Client.Send_Code("INVALID_COMMAND");
+        else:
+            if (Command[0] in self.Nodes):
+                Client.Send("TBD");
+            else:
+                Client.Send_Code("UNKNOWN_ENDPOINT")
         return True;
 
     def Trinity_Routine(self) -> None:
@@ -271,7 +279,7 @@ class Trinity_Ignition:
 
 
 Trinity_Version: str = "a250330";
-Trinity_LUnix: int = Time.Get_Unix();
+Trinity_LUnix: int = Time.Get_Unix(); # Unix Time of when Server Launched, calculation of uptime is done client side.
 Connected_Clients: list[Trinity_Server] = [];
 Server_Running: bool = True;
 
@@ -281,5 +289,4 @@ if (__name__== "__main__"):
 
     Config.Logging["File"] = True; # Allow Log Files
     Config.Logging["Print_Level"] = 0; # Show ALL messages
-    dotenv.load_dotenv()
     Trinity_Ignition(Type="Relay");
