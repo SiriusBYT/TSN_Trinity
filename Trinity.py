@@ -145,6 +145,8 @@ class Trinity_Client(Trinity_Socket):
         while (self.Connected and self.Interactive):
             Command = input(f"Trinity://");
             self.Send(Command);
+            if (Command == "CODE¤Closing"):
+                return;
 
     def Communication_Failed(self) -> None: return;
 
