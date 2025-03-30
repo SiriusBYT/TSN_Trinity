@@ -1,24 +1,14 @@
 {
-    "Seminar": {
-        "Type": "Auth",
-        "Address": "localhost",
-        "Port": 2304
+    "Nodes": {
+        "Echo": {
+            "Type": "API",
+            "Address": "ws://localhost/1407",
+            "Security": 1
+        }
     },
-    "Kosaka": {
-        "Type": "Heartbeat",
-        "Address": "localhost",
-        "Port": 2005
-    },
-    "Flashcord": {
-        "Type": "API",
-        "Address": "localhost",
-        "Port": 1407,
-        "Security": 1
-    },
-    "Kronos": {
-        "Type": "API",
-        "Address": "localhost",
-        "Port": 1408,
-        "Security": -1
+    "Settings": {
+        "Packet_Size": 8192,
+        "Server_Max_Communication_Errors": 3,
+        "Server_Max_Communication_Length": 3600
     }
 }
