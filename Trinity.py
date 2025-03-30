@@ -1,7 +1,12 @@
 from TSN_Abstracter import *;
-import asyncio, threading, multiprocessing;
+
+import asyncio;
+
 import websockets;
-import dotenv, os;
+from websockets.sync.server import serve;
+from websockets.sync.client import connect;
+
+import dotenv;
 import time, math;
 
 
@@ -13,10 +18,10 @@ Server_Max_Communication_Errors: int = 3;
 Server_Max_Communication_Length: int = 3600;
 
 """ Make the IDE less angry because of the type safe functions/variables below. """
-class Trinity_Socket: pass;
-Connected_Clients: list[Trinity_Socket] = [];
+class Trinity_Server: pass;
+Connected_Clients: list[Trinity_Server] = [];
 
-def Trinity_Relayer(Client: Trinity_Socket, Command: str) -> bool:
+def Trinity_Relayer(Client: Trinity_Server, Command: str) -> bool:
     Client.Send(Command);
     return True;
 
@@ -29,6 +34,7 @@ def Trinity_Routine() -> None:
 Gives us the variables "Key_Private" and "Key_Public" which are going to be used to secure communication.
 It's better to generate a new key for each client security wise but this is taxing on the server and it doesn't really
 matter anyways since the bigger problem is storing the data received rather than the currently on-going communications"""
+""" # No longer required due to switch to websockets exclusively
 @lambda _: _()
 def Key_Private():
     Log.Info("A Private Key is being generated for this session. Please hold.");
@@ -38,43 +44,44 @@ def Key_Private():
 def Key_Public():
     Log.Info("A Public Key is being generated for this session. Please hold.");
     return Cryptography.Generate_Public(Key_Private);
-
+"""
 
 
 class Trinity_Socket:
     def __init__(
             self, 
-            Processor = None, 
-            WebSocket: websockets.client,
-            Address: tuple[str] = ("wss://localhost:440"),
+            Processor = None,
+            WebSocket = None,
+            Address: str = "ws://localhost:8080",
             Tickrate: int = 0.01,
-            **kwargs
-        ) -> None:
+            **kwargs: dict[str, dict]
+        ):
         """NOTE: Processor is a FUNCTION! For some reason adding "function" to declare we want to accept a function,
         doesn't FUCKING WORK because Python is retarded or something. This is hateful. We're at the mercy of the user not fucking up."""
         Connected_Clients.append(self);
         self.Socket = WebSocket;
-        self.Address = Address;
+        self.Address: str = f"{self.Socket.remote_address[0]}:{self.Socket.remote_address[1]}" if (WebSocket != None) else Address;
 
         self.Processor = Processor;
-        self.Tickrate = Tickrate;
+        self.Tickrate: int = Tickrate;
 
         self.Communication_Errors: int = 0;
         self.Auth_Level: int = 0;
 
-        self.Secure = True if (self.WebSocket) else False;
         self.Connected = self.Process_Auto = True;
-        self.Queue: list[str | bytes] = [];
+        self.Queue: list[str] = [];
 
-        self.kwargs = kwargs;
+        self.kwargs: dict = kwargs;
 
         self.Configuration();
+        self.Thread_Receive();
     
     def __str__(self):
-        return self.Address;
+        return f"{self.Address} ¤ {self.Auth_Level} // {self.Queue}";
 
     def Queue_Wait(self) -> None:
-        """ Wait until the queue is no longer empty """
+        """ Wait until the queue is no longer empty
+        This function is blocking on purpose. """
         while (len(self.Queue) == 0):
             time.sleep(self.Tickrate);
         return;
@@ -84,64 +91,21 @@ class Trinity_Socket:
         self.Connected = False;
         Connected_Clients.remove(self);
 
-    def Receive(self) -> str:
-        try:
-            # Receive Data
-            if (self.WebSocket):
-                Data = self.Socket.recv();
-            else:
-                if (self.Secure):
-                    Data = Cryptography.Decrypt(Key_Private, self.Socket.recv(Packet_Size));
-                else:
-                    Data = self.Socket.recv(Packet_Size).decode();
-            
-            # Null Check
-            if (Data != ""):
-                return Data;
-            self.Communication_Failed();
-        
-        except Exception as Except:
-            Log.Error(Except);
-            self.Communication_Failed();
-
     def Send(self, Data: str | bytes) -> bool:
-        def Send_WebSocket(Data: str) -> bool:
-            S_Send = Log.Info(f"{Data} -> {self.Address}")
-            try:
-                self.Socket.send(Data);
-                S_Send.OK();
-                return True;
-            except Exception as Except:
-                S_Send.ERROR(Except);
-                self.Communication_Failed();
-                return False;
-
-        def Send_RawSocket(Data: str | bytes) -> bool:
-            if (self.Secure):
-                S_Send = Log.Info(f"{Data} -> {self.Address} (Encrypted)")
-                Message = Cryptography.Encrypt(self.Client_Public, Data);
-            elif (type(Data) == bytes):
-                S_Send = Log.Info(f"{Data} -> {self.Address} (Public Key)")
-                Message = Data;
-            else:
-                S_Send = Log.Info(f"{Data} -> {self.Address} (Unencrypted)")
-                Message = Data.encode("UTF-8");
-
-            try:
-                self.Socket.send(Message);
-                S_Send.OK();
-                return True;
-            except Exception as Except:
-                S_Send.ERROR(Except);
-                return False;
-    
-        if (self.WebSocket):
-            return Send_WebSocket(Data);
-        return Send_RawSocket(Data);
+        S_Send = Log.Info(f"{Data} -> {self.Address}")
+        try:
+            self.Socket.send(Data);
+            S_Send.OK();
+            return True;
+        except Exception as Except:
+            S_Send.ERROR(Except);
+            self.Communication_Failed();
+            return False;
 
     def Terminate(self) -> None:
         S_Close = Log.Info(f"Closing {self.Address}...");
-        self.Connected = self.Process_Auto = False;
+        self.Connected: bool = False;
+        self.Process_Auto: bool = False;
         try:
             self.Send_Code("CLOSING");
             self.Client.close();
@@ -160,14 +124,20 @@ class Trinity_Socket:
         if (self.Communication_Errors >= Server_Max_Communication_Errors):
             self.Terminate();
 
-
+    def Thread_Receive(self):
+        try:
+            for Request in self.Socket:
+                if (Request != ""):
+                    Log.Info(f"{self.Address} <- {Request}");
+                    self.Queue.append(Request);
+        except:
+            self.Communication_Failed();
+    
     def Thread_Processor(self):
         while (self.Connected):
             if (self.Queue != []):
-               if (self.Queue[0] == "SYS¤Encrypt"):
-                   self.Process_Auto = False;
-                   self.Enable_Encryption();
-                   self.Process_Auto = True;
+               if (self.Queue[0] == "CODE¤Closing"):
+                   self.Terminate();
                else:
                    if (self.Process_Auto):
                        if (self.Processor(self, self.Queue[0])):
@@ -176,15 +146,6 @@ class Trinity_Socket:
                        time.sleep(self.Tickrate);
             else:
                 time.sleep(self.Tickrate);
-
-    def Thread_Receive(self):
-        # This system is retarded but works. Mostly cause it only has issues with Enable_Encryption()
-        while (self.Connected):
-            New_Message = self.Receive();
-            if (New_Message != None):
-                Log.Info(f"{self.Address} -> {New_Message}");
-                self.Queue.append(New_Message);
-            time.sleep(self.Tickrate);
     
     def Thread_Timeout(self):
         # Terminate a client if they're connected for more than an hour by default.
@@ -194,67 +155,27 @@ class Trinity_Socket:
 
 class Trinity_Server(Trinity_Socket):
     def Configuration(self) -> None:
-        self.IP = f"{self.Address[0]}:{self.Address[1]}";
-        self.Address = f"Web://{self.IP}" if (self.WebSocket) else f"Raw://{self.IP}";
-        Log.Info(f"Connection: {self.Address} (Raw)");
+        Log.Info(f"Connection: {self.Address}");
 
         Misc.Thread_Start(self.Thread_Processor);
-        Misc.Thread_Start(self.Thread_Receive);
         Misc.Thread_Start(self.Thread_Timeout);
 
-    def Enable_Encryption(self) -> None:
-        # This code is shit. But I can't be fucked fixing it.
-        self.Queue.pop(0);
-        
-        self.Queue_Wait();
-        self.Client_Public = Cryptography.Load_Public(self.Queue[0].encode("utf-8"));
-        self.Queue.pop(0);
-        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
-
-        self.Secure = True;
-
-        self.Queue_Wait();
-        if (self.Queue[0] == "Hugging a Mika a day, keeps your sanity away~"):
-            self.Send_Code("OK");
-        else:
-            self.Send_Code("DECRYPTED_UNEXPECTED");
-            self.Secure = False;
-        self.Queue.pop(0);
 
 
 class Trinity_Client(Trinity_Socket):
     def Configuration(self) -> None:
-        self.Client_Public = Key_Public;
-        self.Ping = time.monotonic()*1000; self.Socket.connect((self.Address[0], self.Address[1]));
+        self.Ping = time.monotonic()*1000;
+        self.Socket = connect(self.Address);
         self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
         self.Interactive = self.kwargs["Shell"];
-        Log.Info(f"Connected to {self.Address[0]}:{self.Address[1]} with a latency of {self.Ping}ms.");
+        Log.Info(f"Connected to {self.Address} with a latency of {self.Ping}ms.");
 
-        Misc.Thread_Start(self.Thread_Shell);
-        self.Thread_Receive();
-    
-    def Enable_Encryption(self) -> None:
-        # This code is shit. But I can't be fucked fixing it.
-        self.Send(Cryptography.Get_Bytes_Public(Key_Public));
-        self.Queue_Wait();
-        self.Server_Public = Cryptography.Load_Public(self.Queue[0].encode("utf-8"));
-        self.Queue.pop(0);
-
-        self.Secure = True;
-        self.Send("Hugging a Mika a day, keeps your sanity away~");
-        self.Queue_Wait();
-        if (self.Queue[0] != "CODE¤OK"):
-            self.Secure = False;
-        self.Queue.pop(0);
+        Misc.Thread_Start(self.Thread_Shell)
 
     def Thread_Shell(self) -> None:
         while (self.Connected and self.Interactive):
             Command = input(f"Trinity://");
-            if (Command == "SYS¤Encrypt"):
-                self.Send(Command);
-                self.Enable_Encryption();
-            else:
-                self.Send(Command);
+            self.Send(Command);
 
     def Communication_Failed(self) -> None: return;
 
@@ -272,8 +193,7 @@ class Trinity_Ignition:
                 Log.Info("Loading Endpoints Configuration...");
                 Configuration = File.JSON_Read("Relay.json");
 
-                Misc.Thread_Start(self.RawSocket_Thread);
-                Misc.Thread_Start(self.WebSocket_Thread);
+                asyncio.run(self.WebSocket_Thread());
                 Routine();
 
             case "Endpoint":
@@ -286,39 +206,14 @@ class Trinity_Ignition:
                 Log.Critical(f"Unknown Trinity Server Type: {self.Type}. Shutting down.")
                 quit();
 
-    def RawSocket_Thread(self, Port: int = 1407) -> None:
-        Log.Info("Starting RawSockets Thread...");
-        Socket_Raw = socket.socket();
-        Attempts = 1;
-        while True:
-            Log.Carriage(f"Attempting to bind RawSocket... (Attempt {Attempts})");
-            try:
-                Socket_Raw.bind(("0.0.0.0", Port));
-                Log.Info(f"Successfully binded RawSocket in {Attempts} Attempts.");
-                break;
-            except:
-                Attempts += 1;
-                time.sleep(1);
-        S_Listen = Log.Info(f"Listening for RawSockets...");
-        Socket_Raw.listen();
-        S_Listen.OK();
-        while Server_Running:
-            Client, Address = Socket_Raw.accept();
-            Misc.Thread_Start(
-                Trinity_Server,
-                (self.Processor, Client, Address, False), 
-                True
-            );
 
-    def WebSocket_Thread(self, Port: int = 440) -> None:
-        def Web_Threader(Socket) -> None:
-            Misc.Thread_Start(
-                Trinity_Server,
-                (self.Processor, Client)
-            )
-        Log.Info("Starting WebSockets Thread...");
-        with websockets.sync.server.serve(Web_Threader, "0.0.0.0", 440) as Server:
-            Server.serve_forever();
+    async def WebSocket_Thread(self, Port: int = 440) -> None:
+        Log.Info("Started WebSockets Thread.");
+        def Web_Threader(WebSocket) -> None:
+            Trinity_Server(self.Processor, WebSocket);
+
+        with serve(Web_Threader, "0.0.0.0", 8080) as WS:
+            WS.serve_forever();
 
 # If the file is ran as is, assuming we want to start the Trinity Relay.
 if (__name__== "__main__"):

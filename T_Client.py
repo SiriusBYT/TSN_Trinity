@@ -2,4 +2,4 @@
 from TSN_Abstracter import *; Log.Clear();
 from Trinity import *;
 
-Trinity_Client(Address = ("localhost", 1407), Shell=True);
+Trinity_Client(Shell=True);
