@@ -1,14 +1,7 @@
 {
-    "Nodes": {
-        "Echo": {
-            "Type": "API",
-            "Address": "ws://localhost:1407",
-            "Security": 1
-        }
-    },
     "Settings": {
         "Address": "0.0.0.0",
-        "Port": 8080,
+        "Port": 1407,
         "Packet_Size": 8192,
         "Tick_Rate": 0.01,
         "Server_Max_Communication_Errors": 3,
