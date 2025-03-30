@@ -104,7 +104,7 @@ class Trinity_Socket:
             Log.Warning(f"Disconnected: {self.Address}")
             self.Terminate();
         except Exception as Except:
-            Log.Warning(Except);
+            Log.Debug(f"Error receiving data from {self.Address}:\nEXCEPTION:\n\t{Except}");
             self.Communication_Failed();
     
     def Thread_Processor(self):
@@ -184,6 +184,8 @@ class Trinity_Requester(Trinity_Socket):
 
     def Thread_Processor(self): return;
 
+
+
 class Trinity_Ignition:
     def __init__(self, Processor = None, Routine = None, Type: str = "Relay") -> None:
         self.Type: str = Type;
@@ -243,7 +245,8 @@ class Trinity_Ignition:
         def Node_Processor(Node: Trinity_Client, Command: str):
             # Assume every Node Message is a broadcast to ALL clients.
             for Client in Connected_Clients:
-                Client.Send(Command)
+                Client.Send(f"{Node_Name}¤{Command}");
+            Node.Queue.pop(0);
         
         def Node_Threader(Node_Address: str, Node_ID: str) -> None:
             Trinity_Client(Processor=Node_Processor, Address=Node_Address, Config=self.Config["Settings"], ID=Node_ID, is_Node=True);
