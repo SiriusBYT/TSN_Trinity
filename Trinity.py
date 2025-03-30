@@ -90,6 +90,8 @@ class Trinity_Socket:
                 if (Request != ""):
                     Log.Info(f"{self.Address} <- {Request}");
                     self.Queue.append(Request);
+                if (not self.Connected):
+                    return;
         except:
             self.Communication_Failed();
     
@@ -128,13 +130,16 @@ class Trinity_Client(Trinity_Socket):
         try:
             self.Socket = connect(self.Address);
         except:
-            self.Terminate();
+            self.Connected: bool = False;
+            return;
         self.Ping = math.floor(((time.monotonic()*1000) - self.Ping));
         self.Interactive = self.kwargs["Shell"];
         Log.Info(f"Connected to {self.Address} with a latency of {self.Ping}ms.");
 
         Misc.Thread_Start(self.Thread_Processor);
-        Misc.Thread_Start(self.Thread_Shell);
+
+        if (self.Interactive):
+            Misc.Thread_Start(self.Thread_Shell);
 
     def Thread_Shell(self) -> None:
         while (self.Connected and self.Interactive):
@@ -175,7 +180,7 @@ class Trinity_Ignition:
                 Server_Max_Communication_Length = self.Configuration["Settings"]["Server_Max_Communication_Length"];
 
                 asyncio.run(self.WebSocket_Thread());
-                self.Routine(self);
+                self.Routine();
 
             case "Endpoint":
                 Log.Info("Starting Trinity Server as an Endpoint...")
@@ -191,10 +196,12 @@ class Trinity_Ignition:
         Log.Debug("Reconnecting Nodes...")
         for Node in self.Configuration["Nodes"]:
             if (self.Nodes[Node]["Connected"] == False):
+                Log.Debug(f"Attempting to reestablish link with {Node}.")
                 Misc.Thread_Start(
                     self.Node_Thread,
                     (Node, self.Configuration["Nodes"][Node]["Address"])
                 );
+        Log.Debug("Done attempting to reconnect nodes.")
 
     def Node_Thread(self, Node_Name: str, Node_Address: str) -> None:
         try:
@@ -222,6 +229,7 @@ class Trinity_Ignition:
 
     def Trinity_Routine(self) -> None:
         while (Server_Running):
+            Log.Debug("Hi")
             Log.Carriage(f"Connected Clients: {len(Connected_Clients)} // {len(self.Nodes)} Nodes out of {len(self.Configuration["Nodes"])} Connected.");
             time.sleep(1);
             for Client in Connected_Clients:
