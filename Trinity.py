@@ -36,7 +36,13 @@ class Trinity_Socket:
         self.Config = Config;
 
         self.Communication_Errors: int = 0;
-        self.Auth_Level: int = 0;
+        self.Authorizations: dict = {
+            "user": {
+                "name": "anonymous",
+                "type": "anonymous"
+            },
+            "node_auth": {}
+        };
 
         self.Connected = self.Process_Auto = True;
         self.Queue: list[str] = [];
@@ -45,7 +51,7 @@ class Trinity_Socket:
         self.Thread_Receive();
     
     def __str__(self):
-        return f"{self.Address} ¤ {self.Auth_Level} // {self.Queue}";
+        return f"{self.Address} ¤ {self.Authorizations["user"]["name"]} / {self.Authorizations["user"]["type"]} // {self.Queue}";
 
     def Queue_Wait(self) -> None:
         """ Wait until the queue is no longer empty
@@ -270,7 +276,7 @@ class Trinity_Ignition:
                     Node_Socket = Node;
                     break;
         except Exception as Except:
-            raise Exception(Except);
+            raise Exception(Except); # this is only temporary i swear
     
         if (Node_Socket == None):
             raise Exception("Could not find ID in Connected Nodes!");
@@ -298,6 +304,8 @@ class Trinity_Ignition:
         """
         True = Processed Request Successfully
         False = Need to retry processing due to internal error
+
+        TBD: False is never returned nor None.
         """
         # Make sure the request is in a valid format
         if ("¤" in Command):
@@ -306,22 +314,39 @@ class Trinity_Ignition:
             Client.Send_Code("INVALID_FORMAT");
             return True;
     
+        match Command[1]:
+            case "DISCONNECTED" | "CONNECTED":
+                Client.Send_Code("ILLEGAL_REQUEST");
+    
         # Internal Relay Commands
-        if (Command[0] == "Trinity"):
-            match Command[1]:
-                case "Version":
-                    Client.Send(Trinity_Version);
-                case "Heartbeat":
-                    Client.Send(f"{psutil.cpu_percent(0.01)}¤{psutil.virtual_memory().available}¤{psutil.virtual_memory().total}")
-                case "Uptime":
-                    Client.Send(str(Trinity_LUnix));
-                case _:
-                    Client.Send_Code("INVALID_COMMAND");
-        else:
-            if (Command[0] in self.Nodes):
-                Client.Send(Trinity_Requester(Command[1], Client.Address, self.Config["Nodes"][Command[0]]["Address"]).Requester());
-            else:
-                Client.Send_Code("ENDPOINT_UNKNOWN");
+        match Command[0]:
+            case "Trinity":
+                match Command[1]:
+                    case "Version":
+                        Client.Send(Trinity_Version);
+                    case "Heartbeat":
+                        Client.Send(f"{psutil.cpu_percent(0.01)}¤{psutil.virtual_memory().available}¤{psutil.virtual_memory().total}")
+                    case "Uptime":
+                        Client.Send(str(Trinity_LUnix));
+                    
+                    case "Authorizations":
+                        Client.Send(str(Client.Authorizations));
+                    
+                    case _:
+                        Client.Send_Code("INVALID_COMMAND");
+            case "GREET":
+                if (Command[0] in self.Nodes):
+                    Client.Send(Trinity_Requester("CONNECTION", Client.Address, self.Config["Nodes"][Command[0]]["Address"]).Requester());
+                else:
+                    Client.Send_Code("ENDPOINT_UNKNOWN");
+            case _:
+                if (Command[0] in self.Nodes):
+                    if (Command[0] in Client.Connected_Nodes):
+                        Client.Send(Trinity_Requester(Command[1], Client.Address, self.Config["Nodes"][Command[0]]["Address"]).Requester());
+                    else:
+                        Client.Send_Code("ENDPOINT_NOT_GREETED");
+                else:
+                    Client.Send_Code("ENDPOINT_UNKNOWN");
         return True;
 
     def Trinity_Routine(self) -> None:
@@ -344,7 +369,7 @@ class Trinity_Ignition:
             Delay_Tick+=1;
 
 
-Trinity_Version: str = "a250330";
+Trinity_Version: str = "a250414";
 Trinity_LUnix: int = Time.Get_Unix(); # Unix Time of when Server Launched, calculation of uptime is done client side.
 Connected_Clients: list[Trinity_Server] = [];
 Connected_Nodes: list[Trinity_Client] = [];
@@ -355,5 +380,5 @@ if (__name__== "__main__"):
     Log.Delete(); # DEBUG
 
     Config.Logging["File"] = True; # Allow Log Files
-    Config.Logging["Print_Level"] = 20; # Show ALL messages
+    Config.Logging["Print_Level"] = 20;
     Trinity_Ignition(Type="Relay");

@@ -1,0 +1,29 @@
+If this looks complex and retarded that's because it is
+
+Client -> Trinity
+
+# Optional Step: Authentification
+Client:/ LOGIN¤[my username]¤[my password but hashed and shid] -> Trinity
+[!] username cannot contain "¤", though password can [!]
+Trinity:/ [IP]¤[username]¤[password hash] -> Seminar
+Seminar:/ [Authorizations Dict or error code] -> Trinity
+== If valid, replaces self.Authorizations ==
+
+# Endpoint Connection
+Trinity:/ CODE¤[code wow] -> Client
+Client:/ GREET[Endpoint Name] -> Trinity
+Trinity:/ [IP]¤CONNECTION -> [Endpoint Name]
+== Addition of [Endpoint] in Client Connected Nodes ==
+
+# Requests
+[Endpoint]:/ CODE¤[code wow] -> Trinity
+Trinity:/ CODE¤[much code] -> Client
+Client:/ [Endpoint]¤[Request] -> Trinity
+Trinity:/ [IP]¤[Request] -> [Endpoint]
+[Endpoint]:/ [IP]¤[Answer] -> Trinity
+Trinity:/ [Answer] -> Client
+
+# Disconnection
+== Based off Client Connected Nodes ==
+Trinity:/ [IP]¤DISCONNECTED -> [Client Connected Nodes]
+[!] Illegal request: "DISCONNECTED"
